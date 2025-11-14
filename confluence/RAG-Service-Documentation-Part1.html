@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI RAG2 - Complete Documentation (Part 1)</title>
+</head>
+<body>
+
+<h1>DSP AI RAG2 (Retrieval Augmented Generation)</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>A comprehensive Retrieval-Augmented Generation (RAG) platform built with FastAPI, offering configurable chunking strategies, vector stores, embedding models, and generation models. Features OpenAI-compatible API, query expansion, multi-vector retrieval, and enterprise security.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is DSP AI RAG2?</h3>
+<p>DSP AI RAG2 is an enterprise-grade RAG (Retrieval-Augmented Generation) platform that combines document retrieval with Large Language Models (LLMs) to provide accurate, context-aware responses. It serves as a knowledge base that can answer questions using your organization's documents.</p>
+
+<h3>Key Features</h3>
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Core Capabilities</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>OpenAI-Compatible API</strong> - Drop-in replacement for OpenAI's chat completions API</li>
+            <li><strong>Multiple Vector Stores</strong> - FAISS, Redis, Elasticsearch, Neo4j, BM25</li>
+            <li><strong>Query Expansion</strong> - Automatic query enhancement using LLMs</li>
+            <li><strong>Multi-Configuration Retrieval</strong> - Query multiple knowledge bases simultaneously</li>
+            <li><strong>Reranking</strong> - Advanced result reranking for improved relevance</li>
+            <li><strong>Security</strong> - JWT authentication with metadata-based filtering</li>
+            <li><strong>Knowledge Graphs</strong> - Neo4j integration for semantic relationships</li>
+            <li><strong>Document Processing</strong> - Support for PDF, DOCX, PPTX, TXT files</li>
+            <li><strong>Configurable Pipeline</strong> - Customize chunking, embedding, and generation</li>
+            <li><strong>Production Ready</strong> - REST API with comprehensive monitoring</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Architecture</h2>
+
+<h3>System Architecture</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────────────────────────────────────────────────────────┐
+│                      DSP AI RAG2                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                   API Layer                          │  │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    │  │
+│  │  │  REST API  │  │  OpenAI    │  │    MCP     │    │  │
+│  │  │  Endpoints │  │ Compatible │  │   Server   │    │  │
+│  │  └────────────┘  └────────────┘  └────────────┘    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                            │                                │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                  RAG Service Core                    │  │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    │  │
+│  │  │   Query    │  │  Document  │  │   Config   │    │  │
+│  │  │ Expansion  │  │ Processor  │  │  Manager   │    │  │
+│  │  └────────────┘  └────────────┘  └────────────┘    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                            │                                │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                 Processing Pipeline                  │  │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    │  │
+│  │  │  Chunking  │→ │ Embedding  │→ │  Storage   │    │  │
+│  │  │  Service   │  │  Service   │  │  Service   │    │  │
+│  │  └────────────┘  └────────────┘  └────────────┘    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                            │                                │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                  Vector Stores                       │  │
+│  │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐  │  │
+│  │  │FAISS│ │Redis│ │ ES  │ │Neo4j│ │BM25 │ │ NX  │  │  │
+│  │  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                            │                                │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                    LLM Providers                     │  │
+│  │  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐    │  │
+│  │  │  Groq  │  │ OpenAI │  │ Triton │  │ Custom │    │  │
+│  │  └────────┘  └────────┘  └────────┘  └────────┘    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Request Flow</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+1. User Query → API Endpoint
+2. Authentication (JWT validation if enabled)
+3. Query Expansion (optional)
+   - Generate query variations
+   - Multi-query generation
+4. Document Retrieval
+   - Vector similarity search
+   - Metadata filtering
+   - Multi-store fusion (optional)
+5. Reranking (optional)
+   - Score-based reranking
+   - Model-based reranking
+6. Context Assembly
+   - Retrieved documents
+   - Additional context items
+7. LLM Generation
+   - System prompt injection
+   - Context-aware response
+8. Response → User
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Getting Started</h2>
+
+<h3>Prerequisites</h3>
+<ul>
+    <li>Python 3.8+</li>
+    <li>Groq API key (for LLM generation)</li>
+    <li>Optional: Redis, Elasticsearch, Neo4j for advanced vector stores</li>
+</ul>
+
+<h3>Installation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Setup Commands</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Clone repository
+git clone https://github.com/dsp/dsp_ai_rag2.git
+cd dsp_ai_rag2
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env and add your API keys
+
+# Run the application
+python -m app.main
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Default Port</ac:parameter>
+    <ac:rich-text-body>
+        <p>RAG Service runs on <strong>http://localhost:8000</strong> by default</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Environment Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">.env File</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# API Keys
+GROQ_API_KEY=your_groq_api_key
+OPENAI_API_KEY=your_openai_api_key  # Optional
+COHERE_API_KEY=your_cohere_api_key  # Optional for reranking
+
+# Storage
+STORAGE_PATH=./storage
+MAX_FILE_SIZE=10485760  # 10MB
+LOCAL_MODELS_PATH=./models
+
+# Model Server
+MODEL_SERVER_URL=http://localhost:9001
+
+# Redis (optional)
+REDIS_URL=redis://localhost:6379
+
+# Logging
+LOG_LEVEL=INFO
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Configuration Management</h2>
+
+<h3>Creating a Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Create Configuration API Call</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/configurations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "configuration_name": "company_knowledge_base",
+    "chunking": {
+      "strategy": "recursive",
+      "chunk_size": 1000,
+      "chunk_overlap": 200
+    },
+    "vector_store": {
+      "type": "faiss",
+      "normalize_similarity_scores": true
+    },
+    "embedding": {
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "batch_size": 32
+    },
+    "generation": {
+      "provider": "groq",
+      "model": "llama3-8b-8192",
+      "api_key": "${GROQ_API_KEY}",
+      "temperature": 0.7,
+      "max_tokens": 1024
+    },
+    "reranking": {
+      "enabled": true,
+      "model": "cohere",
+      "top_n": 10
+    },
+    "retrieval_k": 5,
+    "similarity_threshold": 0.7
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Configuration Structure</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Component</th>
+            <th>Options</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Chunking</strong></td>
+            <td>fixed, sentence, recursive, semantic</td>
+            <td>Document splitting strategy</td>
+        </tr>
+        <tr>
+            <td><strong>Vector Store</strong></td>
+            <td>faiss, redis, elasticsearch, neo4j, bm25</td>
+            <td>Document storage backend</td>
+        </tr>
+        <tr>
+            <td><strong>Embedding</strong></td>
+            <td>sentence-transformers, openai, custom</td>
+            <td>Text embedding model</td>
+        </tr>
+        <tr>
+            <td><strong>Generation</strong></td>
+            <td>groq, openai, triton</td>
+            <td>LLM provider for responses</td>
+        </tr>
+        <tr>
+            <td><strong>Reranking</strong></td>
+            <td>cohere, cross-encoder, custom</td>
+            <td>Result reranking model</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Document Management</h2>
+
+<h3>Uploading Documents</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Upload Document</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Upload a PDF document
+curl -X POST http://localhost:8000/api/v1/documents \
+  -F "file=@company_manual.pdf" \
+  -F "configuration_name=company_knowledge_base" \
+  -F "metadata={\"department\":\"engineering\",\"year\":2024}"
+
+# Upload multiple documents
+for file in *.pdf; do
+  curl -X POST http://localhost:8000/api/v1/documents \
+    -F "file=@$file" \
+    -F "configuration_name=company_knowledge_base"
+done
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Supported File Formats</h3>
+<ul>
+    <li><strong>PDF</strong> - Portable Document Format</li>
+    <li><strong>DOCX</strong> - Microsoft Word documents</li>
+    <li><strong>PPTX</strong> - PowerPoint presentations</li>
+    <li><strong>TXT</strong> - Plain text files</li>
+</ul>
+
+<h3>Document Processing Pipeline</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+1. File Upload
+   ↓
+2. Content Extraction
+   - PDF: PyPDF2
+   - DOCX: python-docx
+   - PPTX: python-pptx
+   ↓
+3. Text Chunking
+   - Strategy-based splitting
+   - Overlap handling
+   ↓
+4. Embedding Generation
+   - Batch processing
+   - Vector creation
+   ↓
+5. Vector Storage
+   - Index creation
+   - Metadata attachment
+   ↓
+6. Ready for Retrieval
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 2"/></ac:link> - Query Operations and OpenAI API</li>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 3"/></ac:link> - Advanced Features and Best Practices</li>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="Front Door Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="JWT Service Documentation"/></ac:link></li>
+</ul>
+
+</body>
+</html>

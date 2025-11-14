@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI RAG2 - Documentation Part 3 (Advanced Features)</title>
+</head>
+<body>
+
+<h1>DSP AI RAG2 - Advanced Features & Best Practices</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This section covers advanced features including security, reranking, MCP server integration, multi-configuration retrieval, and production best practices.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security & Authentication</h2>
+
+<h3>JWT Bearer Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Security Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "security": {
+    "enabled": true,
+    "type": "jwt_bearer",
+    "jwt_secret_key": "your-secret-key-at-least-32-chars",
+    "jwt_algorithm": "HS256",
+    "jwt_issuer": "your-issuer",
+    "jwt_audience": "rag-service",
+    "jwt_require_exp": true,
+    "jwt_require_iat": true,
+    "jwt_leeway": 0
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Metadata-Based Filtering</h3>
+
+<p>JWT tokens can include metadata filters that automatically restrict document retrieval:</p>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">JWT Token Payload</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "sub": "user123",
+  "iat": 1705320000,
+  "exp": 1705321800,
+  "metadata_filter": {
+    "department": "engineering",
+    "access_level": {"$in": ["public", "internal"]},
+    "classification": {"$ne": "confidential"}
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Using Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Authenticated Request</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Query with JWT token
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are our security protocols?",
+    "configuration_name": "secure_docs"
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Filter Operators</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Operator</th>
+            <th>Description</th>
+            <th>Example</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>$eq</code></td>
+            <td>Equals</td>
+            <td><code>{"status": {"$eq": "published"}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$ne</code></td>
+            <td>Not equals</td>
+            <td><code>{"type": {"$ne": "draft"}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$in</code></td>
+            <td>In array</td>
+            <td><code>{"category": {"$in": ["tech", "docs"]}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$nin</code></td>
+            <td>Not in array</td>
+            <td><code>{"status": {"$nin": ["archived", "deleted"]}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$gt</code></td>
+            <td>Greater than</td>
+            <td><code>{"year": {"$gt": 2022}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$gte</code></td>
+            <td>Greater or equal</td>
+            <td><code>{"score": {"$gte": 0.8}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$lt</code></td>
+            <td>Less than</td>
+            <td><code>{"size": {"$lt": 1000000}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$lte</code></td>
+            <td>Less or equal</td>
+            <td><code>{"priority": {"$lte": 5}}</code></td>
+        </tr>
+        <tr>
+            <td><code>$and</code></td>
+            <td>Logical AND</td>
+            <td><code>{"$and": [{"dept": "eng"}, {"level": 2}]}</code></td>
+        </tr>
+        <tr>
+            <td><code>$or</code></td>
+            <td>Logical OR</td>
+            <td><code>{"$or": [{"type": "doc"}, {"type": "pdf"}]}</code></td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Reranking</h2>
+
+<h3>What is Reranking?</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Reranking Overview</ac:parameter>
+    <ac:rich-text-body>
+        <p>Reranking is a post-processing step that reorders retrieved documents using a more sophisticated model to improve relevance. It's particularly useful when:</p>
+        <ul>
+            <li>Initial retrieval returns many documents</li>
+            <li>Precision is more important than recall</li>
+            <li>You need to filter out marginally relevant results</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Reranking Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Enable Reranking</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "reranking": {
+    "enabled": true,
+    "model": "cohere-rerank",
+    "top_n": 10,
+    "score_threshold": 0.5,
+    "server_url": "http://localhost:9001"
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Available Rerankers</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>cohere-rerank</strong></td>
+            <td>Cohere</td>
+            <td>High-quality reranking API</td>
+        </tr>
+        <tr>
+            <td><strong>cross-encoder</strong></td>
+            <td>Local</td>
+            <td>BERT-based cross-encoder</td>
+        </tr>
+        <tr>
+            <td><strong>custom</strong></td>
+            <td>Custom</td>
+            <td>Your own reranking model</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Multi-Configuration Retrieval</h2>
+
+<h3>Fusion Methods</h3>
+
+<p>When querying multiple configurations, results can be combined using different fusion strategies:</p>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Reciprocal Rank Fusion (RRF)</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>How it works:</strong> Combines rankings from multiple sources using reciprocal rank scores</p>
+        <p><strong>Formula:</strong> <code>RRF_score = Σ(1 / (k + rank))</code></p>
+        <p><strong>Best for:</strong> Combining results from heterogeneous sources</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "configuration_names": ["config1", "config2", "config3"],
+  "fusion_method": "rrf",
+  "rrf_k_constant": 60
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Simple Fusion</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>How it works:</strong> Averages similarity scores across configurations</p>
+        <p><strong>Best for:</strong> Combining results from similar sources</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "configuration_names": ["config1", "config2"],
+  "fusion_method": "simple"
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Multi-Configuration Example</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Query Multiple Knowledge Bases</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are the best practices for microservices?",
+    "configuration_names": [
+      "engineering_docs",
+      "architecture_guides",
+      "best_practices_wiki"
+    ],
+    "fusion_method": "rrf",
+    "rrf_k_constant": 60,
+    "k": 15,
+    "use_reranking": true,
+    "filter_after_reranking": false
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>MCP Server Integration</h2>
+
+<h3>What is MCP?</h3>
+
+<p>Model Context Protocol (MCP) is a standard for connecting AI systems with external tools and data sources. RAG configurations can expose MCP servers for integration with AI assistants like Claude or Cursor.</p>
+
+<h3>MCP Server Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Enable MCP Server</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "mcp_server": {
+    "enabled": true,
+    "startup_enabled": true,
+    "name": "Company Knowledge Base MCP",
+    "description": "Access company documentation via MCP",
+    "protocols": ["http"],
+    "http_host": "localhost",
+    "http_port": 8080,
+    "tools": [
+      {
+        "type": "retrieve",
+        "enabled": true,
+        "name": "search_docs",
+        "description": "Search company documentation",
+        "max_results": 10,
+        "include_metadata": true
+      }
+    ],
+    "inherit_security": true
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Connecting AI Assistants</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Claude Desktop Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "mcpServers": {
+    "company-knowledge": {
+      "command": "http",
+      "args": ["http://localhost:8080/company_kb/mcp"]
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Performance Optimization</h2>
+
+<h3>Chunking Strategies</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Strategy</th>
+            <th>Chunk Size</th>
+            <th>Overlap</th>
+            <th>Use Case</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Small chunks</strong></td>
+            <td>200-500</td>
+            <td>50-100</td>
+            <td>Precise retrieval, Q&A</td>
+        </tr>
+        <tr>
+            <td><strong>Medium chunks</strong></td>
+            <td>500-1500</td>
+            <td>100-300</td>
+            <td>Balanced, general purpose</td>
+        </tr>
+        <tr>
+            <td><strong>Large chunks</strong></td>
+            <td>1500-4000</td>
+            <td>200-500</td>
+            <td>Context-heavy, summarization</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Embedding Optimization</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#FFF0B3</ac:parameter>
+    <ac:parameter ac:name="title">Embedding Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Batch Processing</strong> - Process embeddings in batches (32-128)</li>
+            <li><strong>Model Selection</strong>:
+                <ul>
+                    <li>Fast: all-MiniLM-L6-v2 (384 dim)</li>
+                    <li>Balanced: all-mpnet-base-v2 (768 dim)</li>
+                    <li>High Quality: text-embedding-ada-002 (1536 dim)</li>
+                </ul>
+            </li>
+            <li><strong>Caching</strong> - Cache embeddings for frequently accessed documents</li>
+            <li><strong>Normalization</strong> - Normalize vectors for cosine similarity</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Query Performance</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Performance Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "retrieval_k": 5,              // Limit initial retrieval
+  "similarity_threshold": 0.7,    // Filter low-quality matches
+  "reranking": {
+    "enabled": true,
+    "top_n": 10,                 // Rerank top 10 only
+    "score_threshold": 0.5        // Final quality filter
+  },
+  "generation": {
+    "max_tokens": 1024,           // Limit response size
+    "temperature": 0.3            // Lower for consistency
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Production Deployment</h2>
+
+<h3>Docker Deployment</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">docker-compose.yml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+version: '3.8'
+
+services:
+  rag-service:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - redis
+      - elasticsearch
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+volumes:
+  redis_data:
+  es_data:
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Monitoring & Observability</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Key Metrics to Monitor</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Response Time</strong> - P50, P95, P99 latencies</li>
+            <li><strong>Retrieval Quality</strong> - Average similarity scores</li>
+            <li><strong>Query Expansion</strong> - Success rate, expansion time</li>
+            <li><strong>Document Processing</strong> - Upload success/failure rates</li>
+            <li><strong>Vector Store</strong> - Index size, query performance</li>
+            <li><strong>LLM Usage</strong> - Token consumption, API errors</li>
+            <li><strong>Cache Hit Rate</strong> - Embedding and result caching</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Backup & Recovery</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Backup Script</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+#!/bin/bash
+# Backup RAG configurations and vector stores
+
+BACKUP_DIR="/backups/rag-$(date +%Y%m%d)"
+mkdir -p $BACKUP_DIR
+
+# Backup configurations
+cp -r ./storage/configurations.json $BACKUP_DIR/
+
+# Backup FAISS indices
+cp -r ./storage/faiss_* $BACKUP_DIR/
+
+# Backup Redis (if using)
+redis-cli --rdb $BACKUP_DIR/redis.rdb
+
+# Backup Elasticsearch (if using)
+curl -X PUT "localhost:9200/_snapshot/backup/snapshot_1?wait_for_completion=true"
+
+echo "Backup completed to $BACKUP_DIR"
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Document Preparation</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Clean Text</strong> - Remove headers, footers, page numbers</li>
+            <li><strong>Structured Metadata</strong> - Add department, date, category tags</li>
+            <li><strong>Consistent Formatting</strong> - Use standard document templates</li>
+            <li><strong>Version Control</strong> - Track document versions in metadata</li>
+            <li><strong>Regular Updates</strong> - Schedule periodic document refreshes</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Configuration Management</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Environment Variables</strong> - Use ${VAR} for sensitive data</li>
+            <li><strong>Configuration Versioning</strong> - Track config changes</li>
+            <li><strong>Test Configurations</strong> - Maintain dev/staging/prod configs</li>
+            <li><strong>Documentation</strong> - Document each configuration's purpose</li>
+            <li><strong>Validation</strong> - Test configs before production deployment</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Security Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Enable Authentication</strong> - Always use JWT in production</li>
+            <li><strong>Rotate Secrets</strong> - Regular key rotation schedule</li>
+            <li><strong>Audit Logging</strong> - Log all queries and access</li>
+            <li><strong>Rate Limiting</strong> - Implement per-user rate limits</li>
+            <li><strong>Data Classification</strong> - Use metadata filters for access control</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Troubleshooting</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Poor Retrieval Quality</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Retrieved documents aren't relevant</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Adjust chunk size and overlap</li>
+            <li>Try different embedding models</li>
+            <li>Enable query expansion</li>
+            <li>Lower similarity threshold</li>
+            <li>Enable reranking</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Slow Query Performance</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Queries take too long</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Reduce retrieval_k value</li>
+            <li>Use faster embedding model</li>
+            <li>Enable result caching</li>
+            <li>Optimize vector store indices</li>
+            <li>Use BM25 for keyword search</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Memory Issues</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Out of memory errors</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Reduce embedding batch size</li>
+            <li>Use smaller embedding models</li>
+            <li>Implement document streaming</li>
+            <li>Use external vector stores (Redis, Elasticsearch)</li>
+            <li>Limit concurrent requests</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 1"/></ac:link> - Overview and Setup</li>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 2"/></ac:link> - Query Operations and API</li>
+    <li><ac:link><ri:page ri:content-title="Integration Guide"/></ac:link> - Complete Platform Integration</li>
+</ul>
+
+<hr/>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Need Help?</ac:parameter>
+    <ac:rich-text-body>
+        <p>For additional support:</p>
+        <ul>
+            <li>Check the <a href="http://localhost:8000/docs">API Documentation</a></li>
+            <li>Review example scripts in the repository</li>
+            <li>Contact the DSP AI Platform team</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+</body>
+</html>

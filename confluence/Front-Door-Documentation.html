@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP Front Door (FD2) - Complete Documentation</title>
+</head>
+<body>
+
+<h1>DSP Front Door (FD2)</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>Front Door is an enterprise-grade, modular API gateway that serves as the intelligent front door for dynamic service discovery and routing. It provides a unified entry point for all AI/ML services with automatic module loading, security enforcement, and comprehensive observability.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is Front Door?</h3>
+<p>Front Door v2 (FD2) is a dynamic API gateway that intelligently routes requests to backend services based on manifests from Control Tower. It acts as the single entry point for all AI platform services.</p>
+
+<h3>Key Features</h3>
+<ul>
+    <li><strong>Dynamic Module Loading</strong> - Load modules on-demand from manifests</li>
+    <li><strong>Intelligent Routing</strong> - Path, header, and subdomain-based routing</li>
+    <li><strong>Security Enforcement</strong> - JWT validation and authorization</li>
+    <li><strong>Service Discovery</strong> - Automatic endpoint resolution</li>
+    <li><strong>Load Balancing</strong> - Multiple strategies (round-robin, least-conn, etc.)</li>
+    <li><strong>Observability</strong> - Metrics, logging, and distributed tracing</li>
+    <li><strong>APISIX Integration</strong> - Enterprise gateway features</li>
+</ul>
+
+<hr/>
+
+<h2>Architecture</h2>
+
+<h3>Request Flow</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────┐
+│ Client  │
+└────┬────┘
+     │ 1. Request + JWT Token
+     ▼
+┌─────────────────────────────────────┐
+│         Front Door (FD2)            │
+├─────────────────────────────────────┤
+│  ┌──────────────────────────────┐  │
+│  │   Security Layer             │  │ 2. Validate JWT
+│  │   (JWT Validation)           │  │
+│  └──────────────────────────────┘  │
+│              │                      │
+│  ┌──────────▼──────────────────┐  │
+│  │   Routing Engine             │  │ 3. Route Resolution
+│  │   (Path/Header/Subdomain)    │  │
+│  └──────────────────────────────┘  │
+│              │                      │
+│  ┌──────────▼──────────────────┐  │
+│  │   Module Manager             │  │ 4. Load/Get Module
+│  │   (Dynamic Loading)          │  │
+│  └──────────────────────────────┘  │
+│              │                      │
+│  ┌──────────▼──────────────────┐  │
+│  │   Module Pool                │  │ 5. Execute Module
+│  │   (Cached Instances)         │  │
+│  └──────────────────────────────┘  │
+└─────────────┬───────────────────────┘
+              │ 6. Forward Request
+              ▼
+     ┌─────────────────┐
+     │ Backend Service │
+     └─────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Core Components</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Component</th>
+            <th>Responsibility</th>
+            <th>Technology</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Request Handler</strong></td>
+            <td>Receives and validates incoming requests</td>
+            <td>FastAPI</td>
+        </tr>
+        <tr>
+            <td><strong>Security Layer</strong></td>
+            <td>JWT validation and authorization</td>
+            <td>PyJWT</td>
+        </tr>
+        <tr>
+            <td><strong>Routing Engine</strong></td>
+            <td>Determines target module and endpoint</td>
+            <td>Custom routing logic</td>
+        </tr>
+        <tr>
+            <td><strong>Module Manager</strong></td>
+            <td>Dynamic module lifecycle management</td>
+            <td>Python importlib</td>
+        </tr>
+        <tr>
+            <td><strong>Control Tower Client</strong></td>
+            <td>Fetches manifests and configurations</td>
+            <td>HTTP client</td>
+        </tr>
+        <tr>
+            <td><strong>Module Pool</strong></td>
+            <td>Caches loaded module instances</td>
+            <td>LRU cache</td>
+        </tr>
+        <tr>
+            <td><strong>Observability Layer</strong></td>
+            <td>Metrics, logs, and traces</td>
+            <td>Prometheus, Jaeger</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Getting Started</h2>
+
+<h3>Prerequisites</h3>
+<ul>
+    <li>Python 3.11+</li>
+    <li>Redis (for caching)</li>
+    <li>Control Tower running</li>
+    <li>JWT Service running (optional)</li>
+</ul>
+
+<h3>Installation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Setup Commands</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Clone repository
+git clone https://github.com/dsp/front-door.git
+cd front-door
+
+# Create virtual environment
+python -m venv .fd_venv
+source .fd_venv/bin/activate  # Windows: .fd_venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Start Front Door
+python -m src.main
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Default Port</ac:parameter>
+    <ac:rich-text-body>
+        <p>Front Door runs on <strong>http://localhost:8080</strong> by default</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Environment Variables</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Control Tower Integration
+CONTROL_TOWER_URL=http://localhost:8000
+
+# JWT Service Integration
+JWT_SERVICE_URL=http://localhost:5000
+
+# Caching
+CACHE_TTL_SECONDS=300
+REDIS_URL=redis://localhost:6379
+
+# Module Management
+MODULE_POOL_SIZE=10
+MODULE_TIMEOUT_SECONDS=30
+
+# Monitoring
+PROMETHEUS_ENABLED=true
+JAEGER_ENABLED=true
+LOG_LEVEL=INFO
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Routing Patterns</h2>
+
+<h3>1. Path-Based Routing (Recommended)</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Pattern: /{project}/{module}/endpoint
+curl http://localhost:8080/ai-platform/inference/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [...]}'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>2. Header-Based Routing</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Use X-Project-Module header
+curl http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Module: ai-platform/inference" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [...]}'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>3. Subdomain-Based Routing</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Pattern: {project}-{module}.domain.com
+curl https://ai-platform-inference.api.company.com/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4", "messages": [...]}'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Module System</h2>
+
+<h3>Module Interface</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">BaseModule Interface</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from abc import ABC, abstractmethod
+from typing import Dict, Any
+
+class BaseModule(ABC):
+    """Base interface for all Front Door modules"""
+    
+    @abstractmethod
+    async def initialize(self, config: ModuleConfig) -> None:
+        """Initialize module with configuration"""
+        pass
+    
+    @abstractmethod
+    async def handle_request(self, request: ModuleRequest) -> ModuleResponse:
+        """Process incoming request"""
+        pass
+    
+    @abstractmethod
+    async def health_check(self) -> Dict[str, Any]:
+        """Return module health status"""
+        pass
+    
+    @abstractmethod
+    async def shutdown(self) -> None:
+        """Cleanup resources"""
+        pass
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Creating a Custom Module</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">Example Custom Module</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from src.core.module_interface import BaseModule, ModuleConfig, ModuleRequest, ModuleResponse
+
+class CustomInferenceModule(BaseModule):
+    """Custom inference module example"""
+    
+    async def initialize(self, config: ModuleConfig) -> None:
+        await super().initialize(config)
+        self.model_endpoint = config.endpoints.get("primary")
+        self.api_key = config.runtime_references.get("api_key")
+        self.logger.info(f"Initialized with endpoint: {self.model_endpoint}")
+    
+    async def handle_request(self, request: ModuleRequest) -> ModuleResponse:
+        try:
+            # Extract request data
+            prompt = request.body.get("prompt")
+            model = request.body.get("model", "default")
+            
+            # Call backend service
+            response = await self._call_model(prompt, model)
+            
+            return ModuleResponse(
+                status_code=200,
+                body={"result": response, "model": model},
+                headers={"X-Model-Used": model}
+            )
+        except Exception as e:
+            self.logger.error(f"Request failed: {e}")
+            return ModuleResponse(
+                status_code=500,
+                body={"error": str(e)}
+            )
+    
+    async def health_check(self) -> Dict[str, Any]:
+        return {
+            "status": "healthy",
+            "endpoint": self.model_endpoint,
+            "version": "1.0.0"
+        }
+    
+    async def shutdown(self) -> None:
+        self.logger.info("Shutting down custom module")
+        await super().shutdown()
+    
+    async def _call_model(self, prompt: str, model: str) -> str:
+        # Implementation of model calling logic
+        pass
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Module Configuration in Manifest</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Module Manifest Entry</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "module_type": "custom_inference",
+  "runtime": {
+    "type": "python:3.11",
+    "implementation": "src.modules.custom_inference.CustomInferenceModule"
+  },
+  "endpoints": {
+    "dev": {
+      "primary": "http://dev-model-server:8000",
+      "fallback": "http://dev-backup:8000"
+    },
+    "prod": {
+      "primary": "https://prod-model-server.com",
+      "fallback": "https://prod-backup.com"
+    }
+  },
+  "configuration_references": [
+    {
+      "name": "api_key",
+      "source": "vault://secrets/model_api_key",
+      "required": true
+    }
+  ],
+  "health_check": {
+    "enabled": true,
+    "interval_seconds": 30,
+    "timeout_seconds": 5
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Load Balancing</h2>
+
+<h3>Supported Strategies</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Strategy</th>
+            <th>Description</th>
+            <th>Use Case</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Round Robin</strong></td>
+            <td>Distribute requests evenly across endpoints</td>
+            <td>Equal capacity servers</td>
+        </tr>
+        <tr>
+            <td><strong>Least Connections</strong></td>
+            <td>Route to server with fewest active connections</td>
+            <td>Variable request duration</td>
+        </tr>
+        <tr>
+            <td><strong>Weighted</strong></td>
+            <td>Distribute based on server capacity weights</td>
+            <td>Mixed capacity servers</td>
+        </tr>
+        <tr>
+            <td><strong>Consistent Hash</strong></td>
+            <td>Same client always routes to same server</td>
+            <td>Session affinity needed</td>
+        </tr>
+        <tr>
+            <td><strong>Health-Based</strong></td>
+            <td>Only route to healthy endpoints</td>
+            <td>High availability</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Configuration Example</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "load_balancing": {
+    "strategy": "weighted",
+    "endpoints": [
+      {
+        "url": "http://server1:8000",
+        "weight": 3
+      },
+      {
+        "url": "http://server2:8000",
+        "weight": 2
+      },
+      {
+        "url": "http://server3:8000",
+        "weight": 1
+      }
+    ],
+    "health_check": {
+      "enabled": true,
+      "interval": 30,
+      "timeout": 5
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>APISIX Integration</h2>
+
+<h3>Why APISIX?</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Enterprise Features</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Advanced Rate Limiting</strong> - Per-user, per-IP, custom rules</li>
+            <li><strong>Authentication Plugins</strong> - JWT, OAuth2, API Key, mTLS</li>
+            <li><strong>Traffic Management</strong> - Canary deployments, A/B testing</li>
+            <li><strong>Observability</strong> - Prometheus, Zipkin, SkyWalking</li>
+            <li><strong>Security</strong> - WAF, IP restrictions, CORS</li>
+            <li><strong>Performance</strong> - Response caching, compression</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Integration Architecture</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+Client → APISIX Gateway → Front Door → Backend Service
+           │                  │
+           │                  └─ Control Tower (configs)
+           │
+           └─ Plugins: JWT, Rate Limit, Logging, etc.
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Automatic Route Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">APISIX Auto-Sync</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Front Door automatically configures APISIX routes from manifests
+async def sync_apisix_routes(manifest):
+    for module in manifest.modules:
+        route = {
+            "uri": f"/{manifest.project_id}/{module.name}/*",
+            "upstream": {
+                "type": "roundrobin",
+                "nodes": module.endpoints
+            },
+            "plugins": {
+                "jwt-auth": {"key": "user-key"},
+                "limit-req": {"rate": 100, "burst": 50},
+                "prometheus": {},
+                "cors": {"allow_origins": "*"}
+            }
+        }
+        await apisix_client.create_route(route)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Observability</h2>
+
+<h3>Metrics (Prometheus)</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Metric</th>
+            <th>Type</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>fd_requests_total</code></td>
+            <td>Counter</td>
+            <td>Total number of requests</td>
+        </tr>
+        <tr>
+            <td><code>fd_request_duration_seconds</code></td>
+            <td>Histogram</td>
+            <td>Request latency distribution</td>
+        </tr>
+        <tr>
+            <td><code>fd_active_requests</code></td>
+            <td>Gauge</td>
+            <td>Currently active requests</td>
+        </tr>
+        <tr>
+            <td><code>fd_module_load_seconds</code></td>
+            <td>Histogram</td>
+            <td>Module loading time</td>
+        </tr>
+        <tr>
+            <td><code>fd_cache_hit_ratio</code></td>
+            <td>Gauge</td>
+            <td>Cache effectiveness</td>
+        </tr>
+        <tr>
+            <td><code>fd_errors_total</code></td>
+            <td>Counter</td>
+            <td>Total errors by type</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Logging</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Structured Log Example</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "timestamp": "2024-01-15T10:00:00Z",
+  "level": "INFO",
+  "request_id": "abc-123-def-456",
+  "message": "Request processed successfully",
+  "duration_ms": 42,
+  "module": "inference",
+  "project": "ai-platform",
+  "status_code": 200,
+  "user_id": "user123",
+  "endpoint": "/v1/chat/completions"
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Distributed Tracing</h3>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Jaeger Integration</ac:parameter>
+    <ac:rich-text-body>
+        <p>Front Door supports distributed tracing with Jaeger for end-to-end request visibility:</p>
+        <ul>
+            <li>Trace requests across all services</li>
+            <li>Identify performance bottlenecks</li>
+            <li>Debug complex request flows</li>
+            <li>Monitor service dependencies</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Health Checks</h2>
+
+<h3>Basic Health Check</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Simple health check
+curl http://localhost:8080/health
+
+# Response
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "version": "2.0.0"
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Detailed Health Check</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Detailed health with dependencies
+curl http://localhost:8080/health?detailed=true
+
+# Response
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "version": "2.0.0",
+  "dependencies": {
+    "control_tower": {
+      "status": "healthy",
+      "latency_ms": 15
+    },
+    "jwt_service": {
+      "status": "healthy",
+      "latency_ms": 8
+    },
+    "redis": {
+      "status": "healthy",
+      "latency_ms": 2
+    }
+  },
+  "modules": {
+    "loaded": 5,
+    "active": 3,
+    "errors": 0
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Performance Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Module Caching</strong> - Keep frequently used modules in pool</li>
+            <li><strong>Connection Pooling</strong> - Reuse HTTP connections to backends</li>
+            <li><strong>Response Caching</strong> - Cache idempotent responses</li>
+            <li><strong>Async Operations</strong> - Use async/await for I/O operations</li>
+            <li><strong>Resource Limits</strong> - Set appropriate timeouts and limits</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#FFF0B3</ac:parameter>
+    <ac:parameter ac:name="title">Security Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>JWT Validation</strong> - Always validate tokens before routing</li>
+            <li><strong>Rate Limiting</strong> - Implement per-user rate limits</li>
+            <li><strong>Input Validation</strong> - Validate all request inputs</li>
+            <li><strong>HTTPS Only</strong> - Use TLS for all communications</li>
+            <li><strong>Secret Management</strong> - Never hardcode secrets</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Troubleshooting</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Module Loading Failures</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Module fails to load</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Check module implementation path is correct</li>
+            <li>Verify module class implements BaseModule interface</li>
+            <li>Review module logs for initialization errors</li>
+            <li>Ensure all dependencies are installed</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Routing Issues</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Requests not routing correctly</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Verify project and module names in URL</li>
+            <li>Check manifest exists in Control Tower</li>
+            <li>Review routing logs for pattern matching</li>
+            <li>Ensure JWT token contains correct claims</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Performance Degradation</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Slow response times</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Check backend service health and latency</li>
+            <li>Review module pool size and hit rate</li>
+            <li>Monitor resource usage (CPU, memory)</li>
+            <li>Enable response caching where appropriate</li>
+            <li>Check for network issues or DNS resolution delays</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="JWT Service Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="APISIX Integration Guide"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="Module Development Guide"/></ac:link></li>
+</ul>
+
+<hr/>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Need Help?</ac:parameter>
+    <ac:rich-text-body>
+        <p>For additional support:</p>
+        <ul>
+            <li>Check the <a href="http://localhost:8080/docs">API Documentation</a></li>
+            <li>Review module examples in the repository</li>
+            <li>Contact the DSP AI Platform team</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+</body>
+</html>

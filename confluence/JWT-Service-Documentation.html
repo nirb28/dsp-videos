@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI JWT Service - Complete Documentation</title>
+</head>
+<body>
+
+<h1>DSP AI JWT Service</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>A Flask-based JWT token service designed for integration with APISIX gateway. This service provides JWT token generation with flexible authentication methods and support for dynamic claims based on API keys.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is JWT Service?</h3>
+<p>The JWT Service is a centralized authentication service that generates and validates JSON Web Tokens (JWT) for the DSP AI Platform. It supports multiple authentication methods and provides dynamic claims based on API key configurations.</p>
+
+<h3>Key Features</h3>
+<ul>
+    <li><strong>Multiple Authentication Methods</strong> - LDAP and file-based authentication</li>
+    <li><strong>Configurable JWT Tokens</strong> - Shared secret with APISIX gateway</li>
+    <li><strong>Flexible API Key Configuration</strong> - File-based and inline payload support</li>
+    <li><strong>Dynamic Claims</strong> - Function and API-based claim generation</li>
+    <li><strong>Token Refresh</strong> - Secure token refresh mechanism</li>
+    <li><strong>Token Decoding</strong> - Verify and decode JWT tokens</li>
+    <li><strong>Control Tower Integration</strong> - Use manifest configurations</li>
+</ul>
+
+<hr/>
+
+<h2>Architecture</h2>
+
+<h3>Token Generation Flow</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────┐
+│ Client  │
+└────┬────┘
+     │ 1. POST /token
+     │    {username, password, api_key}
+     ▼
+┌─────────────────────────────────────┐
+│         JWT Service                 │
+├─────────────────────────────────────┤
+│  ┌──────────────────────────────┐  │
+│  │   Authentication Layer       │  │ 2. Validate Credentials
+│  │   (LDAP / File-based)        │  │
+│  └──────────────────────────────┘  │
+│              │                      │
+│  ┌──────────▼──────────────────┐  │
+│  │   API Key Loader             │  │ 3. Load API Key Config
+│  │   (File / Inline)            │  │
+│  └──────────────────────────────┘  │
+│              │                      │
+│  ┌──────────▼──────────────────┐  │
+│  │   Claims Generator           │  │ 4. Generate Claims
+│  │   (Static + Dynamic)         │  │    - Static values
+│  └──────────────────────────────┘  │    - Function calls
+│              │                      │    - API calls
+│  ┌──────────▼──────────────────┐  │
+│  │   Token Signer               │  │ 5. Sign JWT
+│  │   (HS256 / RS256)            │  │
+│  └──────────────────────────────┘  │
+└─────────────┬───────────────────────┘
+              │ 6. Return Tokens
+              ▼
+     ┌─────────────────┐
+     │  {access_token, │
+     │   refresh_token}│
+     └─────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Core Components</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Component</th>
+            <th>Responsibility</th>
+            <th>Technology</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Authentication Layer</strong></td>
+            <td>Validates user credentials</td>
+            <td>LDAP / File-based</td>
+        </tr>
+        <tr>
+            <td><strong>API Key Manager</strong></td>
+            <td>Loads and validates API key configs</td>
+            <td>YAML files / JSON payload</td>
+        </tr>
+        <tr>
+            <td><strong>Claims Generator</strong></td>
+            <td>Generates static and dynamic claims</td>
+            <td>Python functions / HTTP APIs</td>
+        </tr>
+        <tr>
+            <td><strong>Token Signer</strong></td>
+            <td>Signs JWT tokens with secret</td>
+            <td>PyJWT</td>
+        </tr>
+        <tr>
+            <td><strong>Token Validator</strong></td>
+            <td>Validates and decodes tokens</td>
+            <td>PyJWT</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Getting Started</h2>
+
+<h3>Prerequisites</h3>
+<ul>
+    <li>Python 3.8+</li>
+    <li>Redis (for token caching)</li>
+    <li>LDAP server (optional, for LDAP auth)</li>
+</ul>
+
+<h3>Installation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Setup Commands</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Clone repository
+git clone https://github.com/dsp/jwt-service.git
+cd jwt-service
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Start JWT Service
+python app.py
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Default Port</ac:parameter>
+    <ac:rich-text-body>
+        <p>JWT Service runs on <strong>http://localhost:5000</strong> by default</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Environment Variables</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# JWT Configuration
+JWT_SECRET_KEY=your-secret-key-at-least-32-characters
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_MINUTES=30
+JWT_REFRESH_EXPIRATION_DAYS=7
+
+# Authentication Method
+AUTH_METHOD=file  # or 'ldap'
+
+# LDAP Configuration (if using LDAP)
+LDAP_SERVER=ldap://ldap.company.com:389
+LDAP_BASE_DN=dc=company,dc=com
+LDAP_USER_DN=cn=users,dc=company,dc=com
+LDAP_ADMIN_DN=cn=admin,dc=company,dc=com
+LDAP_ADMIN_PASSWORD=admin_password
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# Logging
+LOG_LEVEL=INFO
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Authentication Methods</h2>
+
+<h3>1. File-Based Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">config/users.yaml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+john_doe:
+  password: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  # SHA-256 hash
+  name: John Doe
+  email: john.doe@company.com
+  groups:
+    - developers
+    - ml_team
+  roles:
+    - developer
+    - ml_engineer
+  metadata:
+    department: engineering
+    team_id: team-123
+
+jane_smith:
+  password: <sha256_hash>
+  name: Jane Smith
+  email: jane.smith@company.com
+  groups:
+    - admins
+  roles:
+    - admin
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="tip">
+    <ac:parameter ac:name="title">Password Hashing</ac:parameter>
+    <ac:rich-text-body>
+        <p>Use SHA-256 to hash passwords:</p>
+        <code>echo -n "password" | sha256sum</code>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>2. LDAP Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">LDAP Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Set in .env file
+LDAP_SERVER=ldap://corporate-ldap.company.com:389
+LDAP_BASE_DN=dc=company,dc=com
+LDAP_USER_DN=cn=users,dc=company,dc=com
+
+# Users authenticate with their LDAP credentials
+# Groups and roles are fetched from LDAP attributes
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>API Key Configuration</h2>
+
+<h3>File-Based API Keys</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">config/api_keys/premium_tier.yaml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+id: premium-service
+owner: Premium Customer Inc
+description: Premium tier with full access
+
+provider_permissions:
+  - openai
+  - anthropic
+  - groq
+  - local
+
+endpoint_permissions:
+  - /v1/chat/completions
+  - /v1/embeddings
+  - /v1/models
+  - /v1/completions
+
+claims:
+  static:
+    # Fixed values included in every token
+    tier: premium
+    rate_limit: 1000
+    max_tokens: 4000
+    models:
+      - gpt-4
+      - gpt-3.5-turbo
+      - claude-3-opus
+      - claude-3-sonnet
+    features:
+      - streaming
+      - function_calling
+      - vision
+    metadata_filter:
+      access_level: premium
+      department: all
+  
+  dynamic:
+    # Generated at runtime
+    remaining_quota:
+      type: function
+      module: claims.quota
+      function: get_remaining_quota
+      args:
+        user_id: "{user_id}"
+        tier: "{tier}"
+    
+    usage_stats:
+      type: api
+      url: "http://analytics-service/api/stats/{user_id}"
+      method: GET
+      headers:
+        Authorization: "Bearer {internal_token}"
+      response_field: data.summary
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Inline API Key Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Inline Configuration in Request</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "username": "john_doe",
+  "password": "secure_password",
+  "api_key_config": {
+    "id": "custom-key-123",
+    "owner": "Development Team",
+    "claims": {
+      "static": {
+        "key": "dev-consumer-key",
+        "tier": "developer",
+        "models": ["gpt-3.5-turbo", "claude-3-haiku"],
+        "rate_limit": 100,
+        "max_tokens": 2000,
+        "exp_hours": 2
+      }
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Priority</ac:parameter>
+    <ac:rich-text-body>
+        <p>If both <code>api_key</code> and <code>api_key_config</code> are provided, <code>api_key_config</code> takes precedence.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Dynamic Claims</h2>
+
+<h3>Function-Based Claims</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">Function Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+dynamic:
+  user_quota:
+    type: function
+    module: claims.quota
+    function: get_user_quota
+    args:
+      user_id: "{user_id}"
+      tier: "{tier}"
+      period: "monthly"
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">claims/quota.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+def get_user_quota(user_id, tier, period="monthly"):
+    """Calculate remaining quota for user"""
+    # Query database for usage
+    used_tokens = database.get_usage(user_id, period)
+    
+    # Get tier limits
+    limits = {
+        "basic": 10000,
+        "premium": 100000,
+        "enterprise": 1000000
+    }
+    
+    total_limit = limits.get(tier, 10000)
+    remaining = total_limit - used_tokens
+    
+    return {
+        "quota_remaining": remaining,
+        "quota_total": total_limit,
+        "quota_used": used_tokens,
+        "reset_date": get_next_reset_date(period)
+    }
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>API-Based Claims</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">API Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+dynamic:
+  permissions:
+    type: api
+    url: "http://permission-service/api/v1/permissions"
+    method: POST
+    headers:
+      Authorization: "Bearer {internal_token}"
+      Content-Type: "application/json"
+    body:
+      user_id: "{user_id}"
+      resource_type: "llm_models"
+    response_field: data.permissions
+  
+  cost_tracking:
+    type: api
+    url: "http://billing-service/api/costs/{team_id}"
+    method: GET
+    headers:
+      X-API-Key: "{internal_api_key}"
+    response_field: current_month.total
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Available Placeholders</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Placeholder</th>
+            <th>Description</th>
+            <th>Example Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>{user_id}</code></td>
+            <td>Authenticated user's ID</td>
+            <td>john_doe</td>
+        </tr>
+        <tr>
+            <td><code>{api_key}</code></td>
+            <td>Original API key value</td>
+            <td>api_key_premium_123</td>
+        </tr>
+        <tr>
+            <td><code>{api_key_id}</code></td>
+            <td>API key configuration ID</td>
+            <td>premium-service</td>
+        </tr>
+        <tr>
+            <td><code>{team_id}</code></td>
+            <td>User's team identifier</td>
+            <td>team-engineering</td>
+        </tr>
+        <tr>
+            <td><code>{tier}</code></td>
+            <td>Service tier from static claims</td>
+            <td>premium</td>
+        </tr>
+        <tr>
+            <td><code>{internal_token}</code></td>
+            <td>Internal service token</td>
+            <td>eyJhbGc...</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>API Reference</h2>
+
+<h3>Generate Token</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">POST /token</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# With file-based API key
+curl -X POST http://localhost:5000/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_doe",
+    "password": "secure_password",
+    "api_key": "premium_tier"
+  }'
+
+# With inline configuration
+curl -X POST http://localhost:5000/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_doe",
+    "password": "secure_password",
+    "api_key_config": {
+      "id": "custom-key",
+      "owner": "Dev Team",
+      "claims": {
+        "static": {
+          "tier": "developer",
+          "rate_limit": 100
+        }
+      }
+    }
+  }'
+
+# Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 1800
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Refresh Token</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">POST /refresh</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:5000/refresh \
+  -H "Authorization: Bearer <refresh_token>"
+
+# Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 1800
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Decode Token</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">POST /decode</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:5000/decode \
+  -H "Content-Type: application/json" \
+  -d '{"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}'
+
+# Response
+{
+  "sub": "john_doe",
+  "iat": 1705320000,
+  "exp": 1705321800,
+  "tier": "premium",
+  "rate_limit": 1000,
+  "models": ["gpt-4", "claude-3"],
+  "remaining_quota": 85000,
+  "metadata_filter": {
+    "access_level": "premium"
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>JWT Token Structure</h2>
+
+<h3>Token Anatomy</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+JWT Token = Header.Payload.Signature
+
+Example:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJzdWIiOiJqb2huX2RvZSIsInRpZXIiOiJwcmVtaXVtIn0.
+TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Header</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "alg": "HS256",
+  "typ": "JWT"
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Payload (Claims)</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  // Standard claims
+  "sub": "john_doe",
+  "iat": 1705320000,
+  "exp": 1705321800,
+  "iss": "jwt-service",
+  "aud": "dsp-platform",
+  
+  // Custom static claims
+  "tier": "premium",
+  "rate_limit": 1000,
+  "models": ["gpt-4", "claude-3"],
+  "provider_permissions": ["openai", "anthropic"],
+  
+  // Custom dynamic claims
+  "remaining_quota": 85000,
+  "usage_stats": {
+    "requests_today": 150,
+    "tokens_used": 15000
+  },
+  
+  // Metadata for filtering
+  "metadata_filter": {
+    "access_level": "premium",
+    "department": "engineering"
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>APISIX Integration</h2>
+
+<h3>Shared Secret Configuration</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#FFF0B3</ac:parameter>
+    <ac:parameter ac:name="title">Important: Secret Synchronization</ac:parameter>
+    <ac:rich-text-body>
+        <p>The JWT secret must be identical in both JWT Service and APISIX for token validation to work.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">JWT Service (.env)</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+JWT_SECRET_KEY=your-shared-secret-key-at-least-32-characters
+JWT_ALGORITHM=HS256
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">APISIX Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "plugins": {
+    "jwt-auth": {
+      "key": "user-key",
+      "secret": "your-shared-secret-key-at-least-32-characters",
+      "algorithm": "HS256",
+      "exp": 1800
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Complete Request Flow</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+1. Client → JWT Service: Authenticate and get token
+2. Client → APISIX: Request with Bearer token
+3. APISIX: Validates token signature
+4. APISIX → Front Door: Forwards request with validated claims
+5. Front Door: Uses claims for routing and authorization
+6. Front Door → Backend: Processes request
+7. Backend → Client: Returns response
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Security Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Strong Secrets</strong> - Use cryptographically secure keys (min 32 characters)</li>
+            <li><strong>Short Expiration</strong> - Access tokens expire in 30-60 minutes</li>
+            <li><strong>Refresh Tokens</strong> - Use separate long-lived refresh tokens</li>
+            <li><strong>HTTPS Only</strong> - Always use encrypted connections</li>
+            <li><strong>Secret Rotation</strong> - Regularly rotate signing keys</li>
+            <li><strong>Audit Logging</strong> - Log all authentication attempts</li>
+            <li><strong>Rate Limiting</strong> - Prevent brute force attacks</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#FFF0B3</ac:parameter>
+    <ac:parameter ac:name="title">Performance Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Token Caching</strong> - Cache tokens in Redis to reduce generation</li>
+            <li><strong>Async Claims</strong> - Use async for API-based dynamic claims</li>
+            <li><strong>Connection Pooling</strong> - Reuse connections for external APIs</li>
+            <li><strong>Claim Caching</strong> - Cache expensive dynamic claim results</li>
+            <li><strong>Batch Operations</strong> - Batch multiple claim API calls</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Troubleshooting</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Authentication Failures</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> User cannot authenticate</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Verify username and password are correct</li>
+            <li>Check user exists in users.yaml or LDAP</li>
+            <li>Verify password hash is correct (for file-based)</li>
+            <li>Check LDAP server connectivity (for LDAP auth)</li>
+            <li>Review authentication logs</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Token Validation Errors</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Token rejected by APISIX or services</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Verify JWT_SECRET_KEY matches across services</li>
+            <li>Check token hasn't expired</li>
+            <li>Validate token format (three parts separated by dots)</li>
+            <li>Ensure algorithm matches (HS256, RS256, etc.)</li>
+            <li>Check issuer and audience claims</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Dynamic Claims Not Working</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Problem:</strong> Dynamic claims missing or incorrect</p>
+        <p><strong>Solutions:</strong></p>
+        <ul>
+            <li>Check function module and function name are correct</li>
+            <li>Verify API endpoint is accessible</li>
+            <li>Review placeholder substitution in arguments</li>
+            <li>Check response_field path for API claims</li>
+            <li>Review logs for claim generation errors</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="Front Door Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="APISIX Integration Guide"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="API Key Configuration Guide"/></ac:link></li>
+</ul>
+
+<hr/>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Need Help?</ac:parameter>
+    <ac:rich-text-body>
+        <p>For additional support:</p>
+        <ul>
+            <li>Check the <a href="http://localhost:5000/docs">API Documentation</a></li>
+            <li>Review example configurations in the repository</li>
+            <li>Contact the DSP AI Platform team</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+</body>
+</html>

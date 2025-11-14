@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI RAG2 - Documentation Part 2 (Query & API)</title>
+</head>
+<body>
+
+<h1>DSP AI RAG2 - Query Operations & API</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This section covers query operations, OpenAI-compatible API, query expansion, and vector store configurations.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Query Operations</h2>
+
+<h3>Basic Query</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Simple Query</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is our company policy on remote work?",
+    "configuration_name": "company_knowledge_base",
+    "k": 5,
+    "include_metadata": true
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Query with Expansion</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Query Expansion Example</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "machine learning applications",
+    "configuration_name": "tech_docs",
+    "query_expansion": {
+      "enabled": true,
+      "strategy": "multi_query",
+      "llm_config_name": "groq-llama3",
+      "num_queries": 4,
+      "include_metadata": true
+    }
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Multi-Configuration Query</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Query Multiple Knowledge Bases</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are best practices for API design?",
+    "configuration_names": ["tech_docs", "engineering_wiki", "standards"],
+    "fusion_method": "rrf",
+    "k": 10,
+    "use_reranking": true
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Query with Metadata Filtering</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Filtered Query</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "security protocols",
+    "configuration_name": "company_docs",
+    "filter": {
+      "$and": [
+        {"department": "engineering"},
+        {"year": {"$gte": 2023}},
+        {"classification": {"$ne": "confidential"}}
+      ]
+    }
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>OpenAI-Compatible API</h2>
+
+<h3>Chat Completions Endpoint</h3>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Drop-in Replacement</ac:parameter>
+    <ac:rich-text-body>
+        <p>The RAG service provides an OpenAI-compatible API that works with existing OpenAI client libraries. Simply point your client to the RAG service and use configuration names as model names.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">Using OpenAI Python Client</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from openai import OpenAI
+
+# Point to RAG service instead of OpenAI
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed"  # Set if using JWT auth
+)
+
+# Use configuration name as model
+response = client.chat.completions.create(
+    model="company_knowledge_base",  # Your RAG configuration
+    messages=[
+        {"role": "user", "content": "What is our vacation policy?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Streaming Responses</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">Streaming Example</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Enable streaming for real-time responses
+stream = client.chat.completions.create(
+    model="company_knowledge_base",
+    messages=[{"role": "user", "content": "Explain our product features"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>List Available Models</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Get Available Configurations</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# List all available configurations (models)
+curl http://localhost:8000/v1/models
+
+# Response
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "company_knowledge_base",
+      "object": "model",
+      "created": 1705320000,
+      "owned_by": "organization"
+    },
+    {
+      "id": "tech_docs",
+      "object": "model",
+      "created": 1705320000,
+      "owned_by": "organization"
+    }
+  ]
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Query Expansion</h2>
+
+<h3>What is Query Expansion?</h3>
+<p>Query expansion automatically generates multiple variations or related queries to improve retrieval coverage. This helps find relevant documents even when the exact terms don't match.</p>
+
+<h3>Expansion Strategies</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Strategy</th>
+            <th>Description</th>
+            <th>Use Case</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Fusion</strong></td>
+            <td>Generates semantically similar variations</td>
+            <td>Finding documents with different phrasings</td>
+        </tr>
+        <tr>
+            <td><strong>Multi-Query</strong></td>
+            <td>Generates related queries exploring different aspects</td>
+            <td>Comprehensive topic exploration</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Configuring LLM for Expansion</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Create LLM Configuration</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+curl -X POST http://localhost:8000/api/v1/llm-configs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "groq-llama3-expansion",
+    "provider": "groq",
+    "model": "llama3-70b-8192",
+    "endpoint": "https://api.groq.com/openai/v1",
+    "api_key": "${GROQ_API_KEY}",
+    "temperature": 0.8,
+    "max_tokens": 512
+  }'
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Expansion Example</h3>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Query: "machine learning applications"</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Fusion Strategy generates:</strong></p>
+        <ul>
+            <li>"practical uses of machine learning"</li>
+            <li>"ML implementation examples"</li>
+            <li>"artificial intelligence applications in industry"</li>
+        </ul>
+        <p><strong>Multi-Query Strategy generates:</strong></p>
+        <ul>
+            <li>"What are the main applications of machine learning?"</li>
+            <li>"How is ML used in healthcare and finance?"</li>
+            <li>"What are emerging machine learning use cases?"</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Expansion Metadata</h3>
+
+<p>When <code>include_metadata: true</code> is set, the response includes detailed expansion information:</p>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">Expansion Metadata Response</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "query_expansion_metadata": {
+    "original_query": "machine learning applications",
+    "strategy": "multi_query",
+    "llm_config_name": "groq-llama3-expansion",
+    "llm_provider": "groq",
+    "requested_num_queries": 4,
+    "actual_num_queries": 4,
+    "processing_time_seconds": 1.23,
+    "expansion_successful": true,
+    "expanded_queries": [
+      "What are the main applications of machine learning?",
+      "How is ML used in healthcare and finance?",
+      "What are emerging machine learning use cases?",
+      "Real-world machine learning implementations"
+    ],
+    "query_results_summary": [
+      {
+        "query": "machine learning applications",
+        "is_original": true,
+        "results_count": 5,
+        "top_similarity_score": 0.95
+      },
+      {
+        "query": "What are the main applications of machine learning?",
+        "is_original": false,
+        "results_count": 4,
+        "top_similarity_score": 0.92
+      }
+    ],
+    "total_unique_results": 12
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Vector Stores</h2>
+
+<h3>FAISS (Facebook AI Similarity Search)</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">FAISS Configuration</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Best for:</strong> High-performance, in-memory similarity search</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "vector_store": {
+    "type": "faiss",
+    "index_path": "./storage/faiss_index",
+    "dimension": 384,
+    "normalize_similarity_scores": true
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        <p><strong>Features:</strong></p>
+        <ul>
+            <li>Fast similarity search</li>
+            <li>GPU acceleration support</li>
+            <li>Multiple index types</li>
+            <li>Persistent storage</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Redis Vector Store</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Redis Configuration</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Best for:</strong> Distributed, scalable vector search</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "vector_store": {
+    "type": "redis",
+    "redis_host": "localhost",
+    "redis_port": 6379,
+    "redis_username": null,
+    "redis_password": "your_password",
+    "redis_index_name": "documents"
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        <p><strong>Features:</strong></p>
+        <ul>
+            <li>Distributed storage</li>
+            <li>Real-time updates</li>
+            <li>Metadata filtering</li>
+            <li>High availability</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Elasticsearch</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Elasticsearch Configuration</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Best for:</strong> Hybrid search (vector + keyword)</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "vector_store": {
+    "type": "elasticsearch",
+    "es_url": "http://localhost:9200",
+    "es_index_name": "rag_documents",
+    "es_user": "elastic",
+    "es_password": "password",
+    "es_search_type": "hybrid",
+    "es_fulltext_field": "content",
+    "es_semantic_field": "text"
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        <p><strong>Search Types:</strong></p>
+        <ul>
+            <li><code>fulltext</code> - BM25 keyword search</li>
+            <li><code>vector</code> - Pure vector similarity</li>
+            <li><code>semantic</code> - ELSER semantic search</li>
+            <li><code>hybrid</code> - Combined vector + keyword</li>
+            <li><code>query_dsl</code> - Custom Elasticsearch query</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Neo4j Knowledge Graph</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Neo4j Configuration</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Best for:</strong> Semantic relationships and graph traversal</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "vector_store": {
+    "type": "neo4j_knowledge_graph",
+    "neo4j_uri": "neo4j://localhost:7687",
+    "neo4j_user": "neo4j",
+    "neo4j_password": "password",
+    "neo4j_database": "neo4j",
+    "kg_llm_config_name": "graph-extraction-llm"
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        <p><strong>Features:</strong></p>
+        <ul>
+            <li>Entity extraction</li>
+            <li>Relationship mapping</li>
+            <li>Graph queries (Cypher)</li>
+            <li>Semantic search</li>
+            <li>Multi-hop traversal</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>BM25 (Best Matching 25)</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">BM25 Configuration</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Best for:</strong> Keyword-based search without embeddings</p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "vector_store": {
+    "type": "bm25"
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        <p><strong>Features:</strong></p>
+        <ul>
+            <li>No embedding required</li>
+            <li>Fast keyword matching</li>
+            <li>TF-IDF scoring</li>
+            <li>Language agnostic</li>
+            <li>Low resource usage</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>API Reference</h2>
+
+<h3>Core Endpoints</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Method</th>
+            <th>Endpoint</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/api/v1/query</code></td>
+            <td>Query with generation</td>
+        </tr>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/api/v1/retrieve</code></td>
+            <td>Retrieve documents only</td>
+        </tr>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/api/v1/documents</code></td>
+            <td>Upload documents</td>
+        </tr>
+        <tr>
+            <td><code>GET</code></td>
+            <td><code>/api/v1/documents</code></td>
+            <td>List documents</td>
+        </tr>
+        <tr>
+            <td><code>DELETE</code></td>
+            <td><code>/api/v1/documents</code></td>
+            <td>Delete all documents</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Configuration Endpoints</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Method</th>
+            <th>Endpoint</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>GET</code></td>
+            <td><code>/api/v1/configurations</code></td>
+            <td>List configurations</td>
+        </tr>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/api/v1/configurations</code></td>
+            <td>Create configuration</td>
+        </tr>
+        <tr>
+            <td><code>GET</code></td>
+            <td><code>/api/v1/configurations/{name}</code></td>
+            <td>Get configuration</td>
+        </tr>
+        <tr>
+            <td><code>DELETE</code></td>
+            <td><code>/api/v1/configurations/{name}</code></td>
+            <td>Delete configuration</td>
+        </tr>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/api/v1/configurations/duplicate</code></td>
+            <td>Duplicate configuration</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>OpenAI-Compatible Endpoints</h3>
+
+<table>
+    <thead>
+        <tr>
+            <th>Method</th>
+            <th>Endpoint</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><code>POST</code></td>
+            <td><code>/v1/chat/completions</code></td>
+            <td>Chat completions (OpenAI format)</td>
+        </tr>
+        <tr>
+            <td><code>GET</code></td>
+            <td><code>/v1/models</code></td>
+            <td>List available models</td>
+        </tr>
+    </tbody>
+</table>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 1"/></ac:link> - Overview and Setup</li>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 3"/></ac:link> - Advanced Features and Best Practices</li>
+</ul>
+
+</body>
+</html>
