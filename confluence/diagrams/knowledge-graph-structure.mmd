@@ -1,0 +1,85 @@
+graph TB
+    %% Knowledge Graph Structure for RAG Service
+    
+    subgraph "Document Processing"
+        D1[Document Input]
+        D2[Text Extraction]
+        D3[Entity Recognition]
+        D4[Relationship Extraction]
+    end
+    
+    subgraph "Entity Types"
+        E1((Person))
+        E2((Organization))
+        E3((Location))
+        E4((Technology))
+        E5((Event))
+        E6((Concept))
+        E7((Product))
+    end
+    
+    subgraph "Relationship Types"
+        R1{WORKS_FOR}
+        R2{LOCATED_IN}
+        R3{USES}
+        R4{CREATED}
+        R5{PARTNERS_WITH}
+        R6{PARTICIPATED_IN}
+        R7{RELATED_TO}
+    end
+    
+    subgraph "Graph Operations"
+        G1[Vector Search]
+        G2[Graph Traversal]
+        G3[Pattern Matching]
+        G4[Community Detection]
+        G5[PageRank]
+        G6[Shortest Path]
+    end
+    
+    %% Document Processing Flow
+    D1 --> D2
+    D2 --> D3
+    D3 --> D4
+    
+    %% Entity Creation
+    D3 --> E1
+    D3 --> E2
+    D3 --> E3
+    D3 --> E4
+    D3 --> E5
+    D3 --> E6
+    D3 --> E7
+    
+    %% Relationships
+    E1 -.->|WORKS_FOR| E2
+    E2 -.->|LOCATED_IN| E3
+    E2 -.->|USES| E4
+    E1 -.->|CREATED| E7
+    E2 -.->|PARTNERS_WITH| E2
+    E1 -.->|PARTICIPATED_IN| E5
+    E6 -.->|RELATED_TO| E6
+    
+    %% Graph Operations on Entities
+    E1 --> G1
+    E2 --> G2
+    E3 --> G3
+    E4 --> G4
+    E5 --> G5
+    E6 --> G6
+    
+    style E1 fill:#FFE0B2
+    style E2 fill:#E1BEE7
+    style E3 fill:#C5E1A5
+    style E4 fill:#B3E5FC
+    style E5 fill:#FFCCBC
+    style E6 fill:#F8BBD0
+    style E7 fill:#DCEDC8
+    
+    style R1 fill:#FFF9C4
+    style R2 fill:#FFF9C4
+    style R3 fill:#FFF9C4
+    style R4 fill:#FFF9C4
+    style R5 fill:#FFF9C4
+    style R6 fill:#FFF9C4
+    style R7 fill:#FFF9C4

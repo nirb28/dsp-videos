@@ -1,0 +1,108 @@
+graph TB
+    %% Deployment Architecture - Docker Compose
+    
+    subgraph "External Services"
+        EXT1[Internet]
+        EXT2[Corporate Network]
+        EXT3[Cloud Services]
+    end
+    
+    subgraph "Load Balancer"
+        LB[NGINX/HAProxy]
+    end
+    
+    subgraph "API Gateway Layer"
+        GW1[Front Door - 8080]
+        GW2[APISIX - 9080]
+        GW3[APISIX Dashboard - 9000]
+    end
+    
+    subgraph "Core Services"
+        CS1[Control Tower - 8000]
+        CS2[JWT Service - 5000]
+        CS3[RAG Service - 8001]
+        CS4[Model Server - 9001]
+    end
+    
+    subgraph "Data Layer"
+        DB1[(PostgreSQL - 5432)]
+        DB2[(Redis - 6379)]
+        DB3[(Elasticsearch - 9200)]
+        DB4[(Neo4j - 7687)]
+        DB5[etcd - 2379]
+    end
+    
+    subgraph "Storage Volumes"
+        VOL1[/manifests]
+        VOL2[/storage]
+        VOL3[/vectors]
+        VOL4[/documents]
+    end
+    
+    subgraph "Security Services"
+        SEC1[Vault - 8200]
+        SEC2[Vault UI - 8201]
+    end
+    
+    subgraph "Monitoring Stack"
+        MON1[Prometheus - 9090]
+        MON2[Grafana - 3000]
+        MON3[Loki - 3100]
+        MON4[Alertmanager - 9093]
+    end
+    
+    %% Connections
+    EXT1 --> LB
+    EXT2 --> LB
+    LB --> GW1
+    LB --> GW2
+    
+    GW1 --> CS1
+    GW1 --> CS2
+    GW1 --> CS3
+    
+    GW2 --> CS1
+    GW2 --> CS2
+    GW2 --> CS3
+    GW2 --> CS4
+    
+    CS1 --> DB1
+    CS1 --> SEC1
+    CS1 --> VOL1
+    
+    CS2 --> DB1
+    CS2 --> SEC1
+    
+    CS3 --> DB2
+    CS3 --> DB3
+    CS3 --> DB4
+    CS3 --> VOL2
+    CS3 --> VOL3
+    CS3 --> VOL4
+    
+    CS4 --> DB2
+    
+    GW2 --> DB5
+    
+    CS1 --> MON1
+    CS2 --> MON1
+    CS3 --> MON1
+    GW1 --> MON1
+    
+    MON1 --> MON2
+    MON1 --> MON4
+    MON3 --> MON2
+    
+    style LB fill:#FFE0B2
+    style GW1 fill:#E1BEE7
+    style GW2 fill:#E1BEE7
+    style CS1 fill:#C5E1A5
+    style CS2 fill:#C5E1A5
+    style CS3 fill:#C5E1A5
+    style DB1 fill:#B3E5FC
+    style DB2 fill:#B3E5FC
+    style DB3 fill:#B3E5FC
+    style DB4 fill:#B3E5FC
+    style SEC1 fill:#FFCCBC
+    style MON1 fill:#F8BBD0
+    style MON2 fill:#F8BBD0

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Control Tower - LangGraph Workflow Integration</title>
+</head>
+<body>
+
+<h1>Control Tower - LangGraph Workflow Integration</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers the integration of LangGraph workflows with Control Tower for building complex, stateful AI agent workflows with conditional logic and human-in-the-loop capabilities.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is LangGraph?</h3>
+<p>LangGraph is a framework for building stateful, multi-actor applications with LLMs. It enables creation of complex workflows with cycles, conditional logic, and persistent state management.</p>
+
+<h3>Key Concepts</h3>
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">LangGraph Components</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Nodes:</strong> Individual processing steps or agents</li>
+            <li><strong>Edges:</strong> Connections between nodes (conditional or direct)</li>
+            <li><strong>State:</strong> Shared context passed between nodes</li>
+            <li><strong>Checkpoints:</strong> Save and restore workflow state</li>
+            <li><strong>Channels:</strong> Communication paths between nodes</li>
+            <li><strong>Graphs:</strong> Complete workflow definitions</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>LangGraph Module Configuration</h2>
+
+<h3>Module Definition in Manifest</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">langgraph-module.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "name": "document-processing-workflow",
+  "type": "langgraph_workflow",
+  "config": {
+    "workflow_name": "document_processor",
+    "graph_definition": {
+      "nodes": [
+        {
+          "id": "extractor",
+          "type": "llm",
+          "model": "gpt-4",
+          "prompt": "Extract key information from: {document}"
+        },
+        {
+          "id": "classifier",
+          "type": "llm",
+          "model": "claude-3",
+          "prompt": "Classify document type: {extracted_info}"
+        },
+        {
+          "id": "router",
+          "type": "conditional",
+          "conditions": {
+            "financial": "financial_processor",
+            "legal": "legal_processor",
+            "default": "general_processor"
+          }
+        },
+        {
+          "id": "summarizer",
+          "type": "llm",
+          "model": "llama3-70b",
+          "prompt": "Summarize the processed document: {processed_content}"
+        }
+      ],
+      "edges": [
+        {"from": "START", "to": "extractor"},
+        {"from": "extractor", "to": "classifier"},
+        {"from": "classifier", "to": "router"},
+        {"from": "router", "to": "summarizer", "condition": "all"},
+        {"from": "summarizer", "to": "END"}
+      ]
+    },
+    "state_schema": {
+      "document": "string",
+      "extracted_info": "object",
+      "classification": "string",
+      "processed_content": "object",
+      "summary": "string"
+    },
+    "checkpointing": {
+      "enabled": true,
+      "storage": "redis",
+      "ttl": 3600
+    },
+    "human_in_loop": {
+      "enabled": true,
+      "approval_nodes": ["classifier", "summarizer"]
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Building Workflows</h2>
+
+<h3>Python Implementation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">langgraph_workflow.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint import MemorySaver
+from typing import TypedDict, Annotated, Sequence
+import operator
+
+# Define state schema
+class WorkflowState(TypedDict):
+    messages: Annotated[Sequence[str], operator.add]
+    document: str
+    extracted_info: dict
+    classification: str
+    processed_content: dict
+    summary: str
+    next_step: str
+
+# Create workflow graph
+def create_document_workflow():
+    workflow = StateGraph(WorkflowState)
+    
+    # Add nodes
+    workflow.add_node("extractor", extract_information)
+    workflow.add_node("classifier", classify_document)
+    workflow.add_node("router", route_document)
+    workflow.add_node("financial_processor", process_financial)
+    workflow.add_node("legal_processor", process_legal)
+    workflow.add_node("general_processor", process_general)
+    workflow.add_node("summarizer", summarize_document)
+    
+    # Add edges
+    workflow.set_entry_point("extractor")
+    workflow.add_edge("extractor", "classifier")
+    workflow.add_edge("classifier", "router")
+    
+    # Conditional routing
+    workflow.add_conditional_edges(
+        "router",
+        lambda x: x["classification"],
+        {
+            "financial": "financial_processor",
+            "legal": "legal_processor",
+            "general": "general_processor"
+        }
+    )
+    
+    # Connect processors to summarizer
+    workflow.add_edge("financial_processor", "summarizer")
+    workflow.add_edge("legal_processor", "summarizer")
+    workflow.add_edge("general_processor", "summarizer")
+    workflow.add_edge("summarizer", END)
+    
+    # Add checkpointing
+    memory = MemorySaver()
+    app = workflow.compile(checkpointer=memory)
+    
+    return app
+
+# Node implementations
+async def extract_information(state: WorkflowState):
+    """Extract key information from document"""
+    # LLM call to extract information
+    extracted = await llm.extract(state["document"])
+    return {"extracted_info": extracted}
+
+async def classify_document(state: WorkflowState):
+    """Classify document type"""
+    classification = await llm.classify(state["extracted_info"])
+    return {"classification": classification}
+
+async def route_document(state: WorkflowState):
+    """Route based on classification"""
+    return {"next_step": state["classification"]}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Advanced Patterns</h2>
+
+<h3>Human-in-the-Loop Approval</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">human_approval.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from langgraph.prebuilt import ToolExecutor, ToolInvocation
+from langgraph.graph import StateGraph, END
+
+class ApprovalState(TypedDict):
+    task: str
+    result: str
+    approved: bool
+    feedback: str
+
+def create_approval_workflow():
+    workflow = StateGraph(ApprovalState)
+    
+    # Add nodes
+    workflow.add_node("execute_task", execute_task)
+    workflow.add_node("human_review", human_review)
+    workflow.add_node("apply_feedback", apply_feedback)
+    workflow.add_node("finalize", finalize_result)
+    
+    # Add conditional edges
+    workflow.add_conditional_edges(
+        "human_review",
+        lambda x: "apply_feedback" if not x["approved"] else "finalize",
+        {
+            "apply_feedback": "apply_feedback",
+            "finalize": "finalize"
+        }
+    )
+    
+    workflow.add_edge("execute_task", "human_review")
+    workflow.add_edge("apply_feedback", "execute_task")
+    workflow.add_edge("finalize", END)
+    
+    return workflow.compile()
+
+async def human_review(state: ApprovalState):
+    """Wait for human approval"""
+    # Send notification for review
+    notification = {
+        "task": state["task"],
+        "result": state["result"],
+        "review_url": f"/review/{state['task_id']}"
+    }
+    
+    # Wait for human input (async)
+    approval_result = await wait_for_approval(notification)
+    
+    return {
+        "approved": approval_result["approved"],
+        "feedback": approval_result.get("feedback", "")
+    }
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Parallel Processing</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">parallel_workflow.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from langgraph.graph import StateGraph, END
+import asyncio
+
+class ParallelState(TypedDict):
+    input_data: list
+    results: dict
+    aggregated_result: str
+
+def create_parallel_workflow():
+    workflow = StateGraph(ParallelState)
+    
+    # Add parallel processing nodes
+    workflow.add_node("splitter", split_input)
+    workflow.add_node("processor_1", process_chunk_1)
+    workflow.add_node("processor_2", process_chunk_2)
+    workflow.add_node("processor_3", process_chunk_3)
+    workflow.add_node("aggregator", aggregate_results)
+    
+    # Set up parallel execution
+    workflow.set_entry_point("splitter")
+    
+    # Add parallel edges
+    workflow.add_edge("splitter", "processor_1")
+    workflow.add_edge("splitter", "processor_2")
+    workflow.add_edge("splitter", "processor_3")
+    
+    # Converge at aggregator
+    workflow.add_edge("processor_1", "aggregator")
+    workflow.add_edge("processor_2", "aggregator")
+    workflow.add_edge("processor_3", "aggregator")
+    
+    workflow.add_edge("aggregator", END)
+    
+    return workflow.compile()
+
+async def split_input(state: ParallelState):
+    """Split input for parallel processing"""
+    chunks = []
+    chunk_size = len(state["input_data"]) // 3
+    
+    for i in range(0, len(state["input_data"]), chunk_size):
+        chunks.append(state["input_data"][i:i+chunk_size])
+    
+    return {"chunks": chunks}
+
+async def aggregate_results(state: ParallelState):
+    """Combine results from parallel processing"""
+    combined = {}
+    for key, value in state["results"].items():
+        combined.update(value)
+    
+    return {"aggregated_result": combined}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Integration with Control Tower</h2>
+
+<h3>Workflow Execution API</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">workflow_api.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from fastapi import APIRouter, HTTPException
+from typing import Dict, Any
+
+router = APIRouter(prefix="/workflows")
+
+@router.post("/{workflow_name}/execute")
+async def execute_workflow(
+    workflow_name: str,
+    input_data: Dict[str, Any]
+):
+    """Execute a LangGraph workflow"""
+    
+    # Get workflow from manifest
+    workflow_config = get_workflow_config(workflow_name)
+    
+    # Create workflow instance
+    workflow = create_workflow_from_config(workflow_config)
+    
+    # Execute with checkpointing
+    thread_id = generate_thread_id()
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    result = await workflow.ainvoke(input_data, config)
+    
+    return {
+        "workflow_name": workflow_name,
+        "thread_id": thread_id,
+        "status": "completed",
+        "result": result
+    }
+
+@router.get("/{workflow_name}/status/{thread_id}")
+async def get_workflow_status(
+    workflow_name: str,
+    thread_id: str
+):
+    """Get workflow execution status"""
+    
+    checkpoint = get_checkpoint(thread_id)
+    
+    return {
+        "thread_id": thread_id,
+        "status": checkpoint.get("status"),
+        "current_node": checkpoint.get("current_node"),
+        "state": checkpoint.get("state")
+    }
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Use Cases</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Document Processing Pipeline</ac:parameter>
+    <ac:rich-text-body>
+        <p>Multi-stage document analysis with routing based on content type</p>
+        <ul>
+            <li>Extract text and metadata</li>
+            <li>Classify document type</li>
+            <li>Route to specialized processors</li>
+            <li>Generate summaries and insights</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Customer Support Escalation</ac:parameter>
+    <ac:rich-text-body>
+        <p>Intelligent ticket routing with human escalation</p>
+        <ul>
+            <li>Initial AI response</li>
+            <li>Sentiment analysis</li>
+            <li>Conditional escalation to human</li>
+            <li>Feedback loop for improvement</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Code Review Automation</ac:parameter>
+    <ac:rich-text-body>
+        <p>Multi-agent code review with specialized checks</p>
+        <ul>
+            <li>Security vulnerability scan</li>
+            <li>Style and formatting check</li>
+            <li>Performance analysis</li>
+            <li>Aggregated feedback generation</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Workflow Design Guidelines</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Keep nodes focused on single responsibilities</li>
+            <li>✅ Use checkpointing for long-running workflows</li>
+            <li>✅ Implement proper error handling in each node</li>
+            <li>✅ Add human-in-the-loop for critical decisions</li>
+            <li>✅ Use parallel processing for independent tasks</li>
+            <li>✅ Monitor workflow execution metrics</li>
+            <li>✅ Version control workflow definitions</li>
+            <li>✅ Test workflows with various input scenarios</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="CT-Vault-Integration"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="CT-Policy-Management"/></ac:link></li>
+</ul>
+
+</body>
+</html>

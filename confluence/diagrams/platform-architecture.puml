@@ -1,0 +1,142 @@
+@startuml DSP_AI_Platform_Architecture
+!theme blueprint
+title DSP AI Platform - Complete Architecture
+
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
+skinparam backgroundColor #FEFEFE
+
+package "Client Layer" #E8F5E9 {
+    [Web Browser] as browser
+    [API Clients] as api
+    [AI Assistants] as ai
+    [Developer Tools] as devtools
+}
+
+package "Gateway Layer" #E3F2FD {
+    component "Front Door (FD2)" as fd {
+        [Request Router]
+        [Load Balancer]
+        [Rate Limiter]
+        [Security Filter]
+    }
+    
+    component "APISIX Gateway" as apisix {
+        [JWT Plugin]
+        [Prometheus Plugin]
+        [Rate Limit Plugin]
+        [CORS Plugin]
+    }
+}
+
+package "Authentication Layer" #FFF3E0 {
+    component "JWT Service" as jwt {
+        [Token Generator]
+        [JWE Encryption]
+        [API Key Manager]
+        [LDAP Connector]
+    }
+}
+
+package "Control Layer" #F3E5F5 {
+    component "Control Tower" as ct {
+        [Manifest Manager]
+        [Policy Engine (OPA)]
+        [Module Registry]
+        [Vault Client]
+    }
+    
+    database "Manifests" as manifests
+    database "Policies" as policies
+}
+
+package "AI Services Layer" #FFEBEE {
+    component "RAG Service" as rag {
+        [Query Engine]
+        [Document Processor]
+        [Embedding Service]
+        [Reranker]
+    }
+    
+    component "LangGraph Workflows" as langgraph {
+        [Workflow Engine]
+        [State Manager]
+        [Node Executor]
+    }
+    
+    component "MCP Server" as mcp {
+        [Tool Registry]
+        [Protocol Handler]
+        [Client Manager]
+    }
+}
+
+package "Storage Layer" #F1F8E9 {
+    database "Vector Stores" as vectors {
+        [FAISS]
+        [Redis]
+        [Elasticsearch]
+    }
+    
+    database "Graph Database" as neo4j {
+        [Neo4j]
+        [Knowledge Graph]
+    }
+    
+    database "Document Store" as docs {
+        [PDF Storage]
+        [Metadata Store]
+    }
+}
+
+package "Infrastructure" #ECEFF1 {
+    component "HashiCorp Vault" as vault {
+        [Secret Storage]
+        [Dynamic Credentials]
+        [Encryption Service]
+    }
+    
+    component "Monitoring" as monitoring {
+        [Prometheus]
+        [Grafana]
+        [Loki]
+    }
+}
+
+' Client connections
+browser --> fd : HTTPS
+api --> fd : REST API
+ai --> mcp : MCP Protocol
+devtools --> fd : API Calls
+
+' Gateway routing
+fd --> apisix : Route
+apisix --> jwt : Authenticate
+apisix --> ct : Get Config
+apisix --> rag : Forward Request
+
+' Authentication flow
+jwt --> vault : Get Secrets
+jwt <--> ct : Validate
+
+' Control Tower connections
+ct --> manifests : Store/Retrieve
+ct --> policies : Load
+ct --> vault : Secrets
+
+' RAG connections
+rag --> vectors : Query
+rag --> neo4j : Graph Query
+rag --> docs : Retrieve
+rag --> langgraph : Execute Workflow
+
+' MCP connections
+mcp --> rag : Access RAG
+
+' Monitoring
+fd --> monitoring : Metrics
+jwt --> monitoring : Metrics
+ct --> monitoring : Metrics
+rag --> monitoring : Metrics
+
+@enduml

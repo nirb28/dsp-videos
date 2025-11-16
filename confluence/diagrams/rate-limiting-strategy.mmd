@@ -1,0 +1,120 @@
+graph TB
+    %% Rate Limiting Strategy
+    
+    subgraph "Request Entry"
+        REQ[Incoming Request]
+        IP[Client IP]
+        TOKEN[Auth Token]
+        KEY[API Key]
+    end
+    
+    subgraph "Identifier Extraction"
+        ID1[User ID from JWT]
+        ID2[API Key Hash]
+        ID3[IP Address]
+        ID4[Session ID]
+    end
+    
+    subgraph "Rate Limit Tiers"
+        TIER1[Free Tier<br/>20 req/min<br/>100 req/hour]
+        TIER2[Basic Tier<br/>60 req/min<br/>1000 req/hour]
+        TIER3[Premium Tier<br/>200 req/min<br/>10000 req/hour]
+        TIER4[Enterprise<br/>1000 req/min<br/>100000 req/hour]
+    end
+    
+    subgraph "Algorithms"
+        ALG1[Token Bucket<br/>Burst handling]
+        ALG2[Sliding Window<br/>Smooth rate]
+        ALG3[Fixed Window<br/>Simple counter]
+        ALG4[Leaky Bucket<br/>Constant rate]
+    end
+    
+    subgraph "Redis Storage"
+        R1[(User Counters)]
+        R2[(IP Counters)]
+        R3[(API Key Counters)]
+        R4[(Global Counters)]
+    end
+    
+    subgraph "Time Windows"
+        W1[Per Second]
+        W2[Per Minute]
+        W3[Per Hour]
+        W4[Per Day]
+    end
+    
+    subgraph "Actions"
+        CHECK{Check Limits}
+        ALLOW[Allow Request]
+        THROTTLE[Throttle<br/>429 Response]
+        QUEUE[Queue Request]
+        BLOCK[Block<br/>403 Response]
+    end
+    
+    subgraph "Headers"
+        H1[X-RateLimit-Limit]
+        H2[X-RateLimit-Remaining]
+        H3[X-RateLimit-Reset]
+        H4[Retry-After]
+    end
+    
+    subgraph "Monitoring"
+        M1[Rate Limit Hits]
+        M2[Throttle Events]
+        M3[Tier Distribution]
+        M4[Abuse Detection]
+    end
+    
+    %% Flow
+    REQ --> IP
+    REQ --> TOKEN
+    REQ --> KEY
+    
+    IP --> ID3
+    TOKEN --> ID1
+    KEY --> ID2
+    TOKEN --> ID4
+    
+    ID1 --> TIER1
+    ID1 --> TIER2
+    ID1 --> TIER3
+    ID1 --> TIER4
+    
+    TIER1 --> ALG2
+    TIER2 --> ALG1
+    TIER3 --> ALG1
+    TIER4 --> ALG4
+    
+    ALG1 --> R1
+    ALG2 --> R2
+    ALG3 --> R3
+    ALG4 --> R4
+    
+    R1 --> W2
+    R2 --> W2
+    R3 --> W3
+    R4 --> W4
+    
+    W2 --> CHECK
+    W3 --> CHECK
+    
+    CHECK -->|Under Limit| ALLOW
+    CHECK -->|At Limit| THROTTLE
+    CHECK -->|Burst| QUEUE
+    CHECK -->|Abuse| BLOCK
+    
+    ALLOW --> H2
+    THROTTLE --> H4
+    QUEUE --> H3
+    BLOCK --> H1
+    
+    THROTTLE --> M1
+    THROTTLE --> M2
+    ALLOW --> M3
+    BLOCK --> M4
+    
+    style REQ fill:#FFE0B2
+    style CHECK fill:#E1BEE7
+    style ALLOW fill:#C5E1A5
+    style THROTTLE fill:#FFF9C4
+    style BLOCK fill:#FFCDD2

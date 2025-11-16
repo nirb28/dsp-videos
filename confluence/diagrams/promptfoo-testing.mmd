@@ -1,0 +1,125 @@
+flowchart TB
+    %% Promptfoo Testing Workflow
+    
+    subgraph "Test Definition"
+        T1[Define Use Case]
+        T2[Create Prompt Templates]
+        T3[Set Up Test Cases]
+        T4[Configure Providers]
+        T5[Define Assertions]
+    end
+    
+    subgraph "Prompt Templates"
+        P1[Basic Prompt<br/>Simple template]
+        P2[Enhanced Prompt<br/>Detailed instructions]
+        P3[Chain of Thought<br/>Step-by-step reasoning]
+        P4[Few-Shot Prompt<br/>With examples]
+    end
+    
+    subgraph "Test Providers"
+        PR1[OpenAI GPT-4]
+        PR2[Anthropic Claude]
+        PR3[Groq Llama3]
+        PR4[Local Model]
+    end
+    
+    subgraph "Test Cases"
+        TC1[Happy Path<br/>Expected inputs]
+        TC2[Edge Cases<br/>Boundary conditions]
+        TC3[Error Cases<br/>Invalid inputs]
+        TC4[Performance<br/>Large inputs]
+    end
+    
+    subgraph "Assertions"
+        A1[Contains<br/>Keyword check]
+        A2[Not Contains<br/>Exclusion check]
+        A3[LLM Rubric<br/>Quality assessment]
+        A4[JSON Valid<br/>Structure check]
+        A5[Latency<br/>Performance check]
+        A6[Cost<br/>Token usage]
+    end
+    
+    subgraph "Execution"
+        E1[Run Tests<br/>promptfoo eval]
+        E2[Parallel Execution]
+        E3[Result Collection]
+        E4[Score Calculation]
+    end
+    
+    subgraph "Analysis"
+        AN1[View Results<br/>promptfoo view]
+        AN2[Compare Models]
+        AN3[Identify Issues]
+        AN4[Generate Report]
+    end
+    
+    subgraph "Optimization"
+        O1[Refine Prompts]
+        O2[Adjust Parameters]
+        O3[Select Best Model]
+        O4[Deploy to Production]
+    end
+    
+    %% Flow
+    T1 --> T2
+    T2 --> T3
+    T3 --> T4
+    T4 --> T5
+    
+    T2 --> P1
+    T2 --> P2
+    T2 --> P3
+    T2 --> P4
+    
+    T4 --> PR1
+    T4 --> PR2
+    T4 --> PR3
+    T4 --> PR4
+    
+    T3 --> TC1
+    T3 --> TC2
+    T3 --> TC3
+    T3 --> TC4
+    
+    T5 --> A1
+    T5 --> A2
+    T5 --> A3
+    T5 --> A4
+    T5 --> A5
+    T5 --> A6
+    
+    P1 --> E1
+    P2 --> E1
+    P3 --> E1
+    P4 --> E1
+    
+    PR1 --> E2
+    PR2 --> E2
+    PR3 --> E2
+    PR4 --> E2
+    
+    TC1 --> E2
+    TC2 --> E2
+    TC3 --> E2
+    TC4 --> E2
+    
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    
+    E4 --> AN1
+    AN1 --> AN2
+    AN2 --> AN3
+    AN3 --> AN4
+    
+    AN3 --> O1
+    O1 --> O2
+    O2 --> O3
+    O3 --> O4
+    
+    O1 -.-> T2
+    
+    style T1 fill:#FFE0B2
+    style E1 fill:#C5E1A5
+    style AN1 fill:#E1BEE7
+    style O4 fill:#B3E5FC

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RAG Service - MCP Server Integration</title>
+</head>
+<body>
+
+<h1>RAG Service - MCP Server Integration</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers the Model Context Protocol (MCP) server integration with the RAG service, enabling AI assistants like Claude and Cursor to directly access RAG functionality through a standardized protocol.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is MCP?</h3>
+<p>Model Context Protocol (MCP) is a standard protocol that connects AI systems with external tools and data sources. It provides a unified interface for LLMs to interact with various services.</p>
+
+<h3>MCP Architecture</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────────────────────────────────────────────────────────┐
+│                    MCP Architecture                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  AI Assistant (Claude, Cursor, etc.)                       │
+│       ↓                                                    │
+│  MCP Client                                                │
+│       ↓                                                    │
+│  ┌─────────────────────────────────────┐                  │
+│  │         MCP Protocol Layer           │                  │
+│  │  • JSON-RPC 2.0                      │                  │
+│  │  • HTTP/SSE/WebSocket/stdio          │                  │
+│  └─────────────────────────────────────┘                  │
+│       ↓                                                    │
+│  MCP Server (RAG Service)                                  │
+│       ↓                                                    │
+│  ┌─────────────────────────────────────┐                  │
+│  │         Available Tools              │                  │
+│  │  • retrieve_documents                │                  │
+│  │  • search_documents                  │                  │
+│  │  • list_documents                    │                  │
+│  │  • query_knowledge_base              │                  │
+│  └─────────────────────────────────────┘                  │
+│       ↓                                                    │
+│  RAG Configuration & Vector Stores                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>MCP Server Configuration</h2>
+
+<h3>Configuration in RAG</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">mcp-server-config.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "configuration_name": "company-knowledge-mcp",
+  "mcp_server": {
+    "enabled": true,
+    "startup_enabled": true,
+    "name": "Company Knowledge Base MCP",
+    "description": "Access company documentation and knowledge base",
+    "version": "1.0.0",
+    "protocols": ["http", "sse", "stdio"],
+    "http_host": "0.0.0.0",
+    "http_port": 8080,
+    "base_path": "/company-kb/mcp",
+    "tools": [
+      {
+        "type": "retrieve",
+        "enabled": true,
+        "name": "retrieve_documents",
+        "description": "Retrieve relevant documents from the knowledge base",
+        "max_results": 10,
+        "include_metadata": true,
+        "include_scores": true
+      },
+      {
+        "type": "search",
+        "enabled": true,
+        "name": "search_documents",
+        "description": "Search for specific information in documents",
+        "max_results": 20,
+        "search_type": "semantic"
+      },
+      {
+        "type": "list",
+        "enabled": true,
+        "name": "list_documents",
+        "description": "List all available documents",
+        "include_stats": true
+      },
+      {
+        "type": "query",
+        "enabled": true,
+        "name": "query_knowledge_base",
+        "description": "Ask questions and get AI-generated answers",
+        "include_sources": true,
+        "max_context_length": 4000
+      }
+    ],
+    "inherit_security": true,
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 60,
+      "requests_per_hour": 1000
+    },
+    "allowed_clients": ["claude-desktop", "cursor", "custom-client"],
+    "metadata": {
+      "department": "engineering",
+      "owner": "ai-team",
+      "classification": "internal"
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>MCP Server Implementation</h2>
+
+<h3>Server Core</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">mcp_server.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from typing import Dict, Any, List, Optional
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
+
+class MCPServer:
+    def __init__(self, config: Dict[str, Any], rag_service):
+        self.config = config
+        self.rag_service = rag_service
+        self.app = FastAPI()
+        self.tools = self._initialize_tools()
+        self._setup_routes()
+    
+    def _initialize_tools(self) -> Dict[str, Any]:
+        """Initialize available MCP tools"""
+        tools = {}
+        
+        for tool_config in self.config.get('tools', []):
+            if tool_config['enabled']:
+                tool_type = tool_config['type']
+                tool_name = tool_config['name']
+                
+                if tool_type == 'retrieve':
+                    tools[tool_name] = self._create_retrieve_tool(tool_config)
+                elif tool_type == 'search':
+                    tools[tool_name] = self._create_search_tool(tool_config)
+                elif tool_type == 'list':
+                    tools[tool_name] = self._create_list_tool(tool_config)
+                elif tool_type == 'query':
+                    tools[tool_name] = self._create_query_tool(tool_config)
+        
+        return tools
+    
+    def _setup_routes(self):
+        """Setup MCP protocol routes"""
+        
+        @self.app.post("/")
+        async def handle_json_rpc(request: Request):
+            """Handle JSON-RPC 2.0 requests"""
+            body = await request.json()
+            
+            # Validate JSON-RPC request
+            if 'jsonrpc' not in body or body['jsonrpc'] != '2.0':
+                return self._error_response(
+                    -32600, 
+                    "Invalid Request",
+                    body.get('id')
+                )
+            
+            method = body.get('method')
+            params = body.get('params', {})
+            request_id = body.get('id')
+            
+            # Route to appropriate handler
+            if method == 'initialize':
+                return await self._handle_initialize(params, request_id)
+            elif method == 'tools/list':
+                return await self._handle_list_tools(request_id)
+            elif method == 'tools/call':
+                return await self._handle_tool_call(params, request_id)
+            else:
+                return self._error_response(
+                    -32601,
+                    f"Method not found: {method}",
+                    request_id
+                )
+        
+        @self.app.get("/sse")
+        async def handle_sse():
+            """Handle Server-Sent Events for streaming"""
+            return StreamingResponse(
+                self._sse_stream(),
+                media_type="text/event-stream"
+            )
+    
+    async def _handle_initialize(
+        self, 
+        params: Dict[str, Any], 
+        request_id: Any
+    ) -> Dict:
+        """Handle MCP initialization"""
+        
+        client_info = params.get('clientInfo', {})
+        
+        # Validate client
+        client_name = client_info.get('name')
+        if self.config.get('allowed_clients'):
+            if client_name not in self.config['allowed_clients']:
+                return self._error_response(
+                    -32002,
+                    f"Client not allowed: {client_name}",
+                    request_id
+                )
+        
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "1.0",
+                "serverInfo": {
+                    "name": self.config['name'],
+                    "version": self.config.get('version', '1.0.0'),
+                    "description": self.config['description']
+                },
+                "capabilities": {
+                    "tools": True,
+                    "resources": False,
+                    "prompts": False,
+                    "logging": True
+                }
+            }
+        }
+    
+    async def _handle_list_tools(self, request_id: Any) -> Dict:
+        """List available tools"""
+        
+        tool_list = []
+        for name, tool in self.tools.items():
+            tool_list.append({
+                "name": name,
+                "description": tool['description'],
+                "inputSchema": tool['input_schema']
+            })
+        
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": tool_list
+            }
+        }
+    
+    async def _handle_tool_call(
+        self, 
+        params: Dict[str, Any], 
+        request_id: Any
+    ) -> Dict:
+        """Execute tool call"""
+        
+        tool_name = params.get('name')
+        tool_params = params.get('arguments', {})
+        
+        if tool_name not in self.tools:
+            return self._error_response(
+                -32602,
+                f"Unknown tool: {tool_name}",
+                request_id
+            )
+        
+        try:
+            # Execute tool
+            tool = self.tools[tool_name]
+            result = await tool['handler'](tool_params)
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, indent=2)
+                        }
+                    ]
+                }
+            }
+        except Exception as e:
+            return self._error_response(
+                -32603,
+                f"Tool execution failed: {str(e)}",
+                request_id
+            )
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Tool Implementations</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">mcp_tools.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+def _create_retrieve_tool(self, config: Dict[str, Any]) -> Dict:
+    """Create document retrieval tool"""
+    
+    async def retrieve_handler(params: Dict[str, Any]) -> Dict:
+        query = params.get('query')
+        k = min(params.get('k', 5), config.get('max_results', 10))
+        
+        # Call RAG service
+        results = await self.rag_service.retrieve(
+            query=query,
+            configuration_name=self.config['configuration_name'],
+            k=k,
+            similarity_threshold=params.get('threshold', 0.7)
+        )
+        
+        # Format results
+        documents = []
+        for doc in results:
+            doc_data = {
+                'content': doc['content'],
+                'source': doc.get('metadata', {}).get('source', 'unknown')
+            }
+            
+            if config.get('include_metadata'):
+                doc_data['metadata'] = doc.get('metadata', {})
+            
+            if config.get('include_scores'):
+                doc_data['score'] = doc.get('score', 0.0)
+            
+            documents.append(doc_data)
+        
+        return {
+            'query': query,
+            'documents': documents,
+            'count': len(documents)
+        }
+    
+    return {
+        'description': config['description'],
+        'handler': retrieve_handler,
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'query': {
+                    'type': 'string',
+                    'description': 'Search query'
+                },
+                'k': {
+                    'type': 'integer',
+                    'description': 'Number of results',
+                    'default': 5
+                },
+                'threshold': {
+                    'type': 'number',
+                    'description': 'Similarity threshold',
+                    'default': 0.7
+                }
+            },
+            'required': ['query']
+        }
+    }
+
+def _create_query_tool(self, config: Dict[str, Any]) -> Dict:
+    """Create Q&A tool with generation"""
+    
+    async def query_handler(params: Dict[str, Any]) -> Dict:
+        question = params.get('question')
+        context_items = params.get('context', [])
+        
+        # Call RAG service query endpoint
+        response = await self.rag_service.query(
+            query=question,
+            configuration_name=self.config['configuration_name'],
+            context_items=context_items,
+            k=params.get('k', 5)
+        )
+        
+        result = {
+            'question': question,
+            'answer': response['answer']
+        }
+        
+        if config.get('include_sources'):
+            result['sources'] = [
+                {
+                    'content': doc['content'][:200] + '...',
+                    'source': doc.get('metadata', {}).get('source', 'unknown')
+                }
+                for doc in response.get('source_documents', [])
+            ]
+        
+        return result
+    
+    return {
+        'description': config['description'],
+        'handler': query_handler,
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'question': {
+                    'type': 'string',
+                    'description': 'Question to answer'
+                },
+                'context': {
+                    'type': 'array',
+                    'description': 'Additional context',
+                    'items': {'type': 'string'}
+                },
+                'k': {
+                    'type': 'integer',
+                    'description': 'Number of sources',
+                    'default': 5
+                }
+            },
+            'required': ['question']
+        }
+    }
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Client Configuration</h2>
+
+<h3>Claude Desktop Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">claude_desktop_config.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "mcpServers": {
+    "company-knowledge": {
+      "command": "http",
+      "args": ["http://localhost:8080/company-kb/mcp"],
+      "env": {
+        "API_KEY": "your-api-key"
+      }
+    },
+    "technical-docs": {
+      "command": "http",
+      "args": ["http://localhost:8080/tech-docs/mcp"],
+      "env": {
+        "API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Cursor Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">.cursor/mcp.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "servers": [
+    {
+      "name": "RAG Knowledge Base",
+      "type": "http",
+      "url": "http://localhost:8080/rag/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      },
+      "tools": {
+        "retrieve_documents": {
+          "enabled": true,
+          "defaultParams": {
+            "k": 5,
+            "threshold": 0.8
+          }
+        },
+        "query_knowledge_base": {
+          "enabled": true,
+          "defaultParams": {
+            "include_sources": true
+          }
+        }
+      }
+    }
+  ]
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security & Authentication</h2>
+
+<h3>MCP Security Layer</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">mcp_security.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from fastapi import Request, HTTPException
+from typing import Optional
+
+class MCPSecurity:
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.inherit_security = config.get('inherit_security', True)
+    
+    async def validate_request(self, request: Request) -> bool:
+        """Validate MCP request"""
+        
+        # Check if security is inherited from RAG config
+        if self.inherit_security:
+            # Validate JWT token if present
+            auth_header = request.headers.get('Authorization')
+            if auth_header:
+                return await self._validate_jwt(auth_header)
+        
+        # Check API key
+        api_key = request.headers.get('X-API-Key')
+        if api_key:
+            return await self._validate_api_key(api_key)
+        
+        # Check client certificate
+        client_cert = request.headers.get('X-Client-Cert')
+        if client_cert:
+            return await self._validate_certificate(client_cert)
+        
+        # No authentication provided
+        if self.config.get('require_auth', False):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        return True
+    
+    async def _validate_jwt(self, auth_header: str) -> bool:
+        """Validate JWT token"""
+        # Implementation depends on JWT service
+        pass
+    
+    async def _validate_api_key(self, api_key: str) -> bool:
+        """Validate API key"""
+        allowed_keys = self.config.get('allowed_api_keys', [])
+        return api_key in allowed_keys
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Monitoring & Observability</h2>
+
+<h3>MCP Metrics</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">mcp_metrics.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from prometheus_client import Counter, Histogram, Gauge
+import time
+
+# Define metrics
+mcp_requests_total = Counter(
+    'mcp_requests_total',
+    'Total MCP requests',
+    ['method', 'tool', 'status']
+)
+
+mcp_request_duration = Histogram(
+    'mcp_request_duration_seconds',
+    'MCP request duration',
+    ['method', 'tool']
+)
+
+mcp_active_connections = Gauge(
+    'mcp_active_connections',
+    'Active MCP connections',
+    ['protocol']
+)
+
+class MCPMetrics:
+    def __init__(self):
+        self.start_times = {}
+    
+    def record_request_start(self, request_id: str):
+        """Record request start time"""
+        self.start_times[request_id] = time.time()
+    
+    def record_request_end(
+        self,
+        request_id: str,
+        method: str,
+        tool: Optional[str] = None,
+        status: str = 'success'
+    ):
+        """Record request completion"""
+        
+        # Record count
+        mcp_requests_total.labels(
+            method=method,
+            tool=tool or 'none',
+            status=status
+        ).inc()
+        
+        # Record duration
+        if request_id in self.start_times:
+            duration = time.time() - self.start_times[request_id]
+            mcp_request_duration.labels(
+                method=method,
+                tool=tool or 'none'
+            ).observe(duration)
+            del self.start_times[request_id]
+    
+    def record_connection(self, protocol: str, delta: int):
+        """Record connection change"""
+        mcp_active_connections.labels(protocol=protocol).inc(delta)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Use Cases</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">AI Assistant Integration</ac:parameter>
+    <ac:rich-text-body>
+        <p>Enable AI assistants to access company knowledge</p>
+        <ul>
+            <li>Claude Desktop accessing documentation</li>
+            <li>Cursor IDE with code examples</li>
+            <li>Custom chatbots with RAG backend</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Development Tools</ac:parameter>
+    <ac:rich-text-body>
+        <p>Integrate RAG into development workflows</p>
+        <ul>
+            <li>Code completion with context</li>
+            <li>Documentation lookup</li>
+            <li>API reference search</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Research Assistants</ac:parameter>
+    <ac:rich-text-body>
+        <p>Support research with knowledge retrieval</p>
+        <ul>
+            <li>Literature review assistance</li>
+            <li>Fact checking and verification</li>
+            <li>Cross-reference validation</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">MCP Implementation Guidelines</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Implement proper authentication</li>
+            <li>✅ Use rate limiting to prevent abuse</li>
+            <li>✅ Cache frequent queries</li>
+            <li>✅ Monitor tool usage patterns</li>
+            <li>✅ Version your MCP API</li>
+            <li>✅ Document tool schemas clearly</li>
+            <li>✅ Handle errors gracefully</li>
+            <li>✅ Support multiple protocols</li>
+            <li>✅ Test with different clients</li>
+            <li>✅ Log all tool invocations</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 1"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="RAG-Knowledge-Graph"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="RAG-Query-Expansion"/></ac:link></li>
+</ul>
+
+</body>
+</html>

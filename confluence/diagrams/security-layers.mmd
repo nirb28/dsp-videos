@@ -1,0 +1,114 @@
+graph TD
+    %% Security Layers for DSP AI Platform
+    
+    subgraph "Layer 1: Network Security"
+        N1[TLS/SSL Termination]
+        N2[IP Whitelisting]
+        N3[DDoS Protection]
+        N4[WAF Rules]
+    end
+    
+    subgraph "Layer 2: Authentication"
+        A1[JWT Bearer Tokens]
+        A2[API Key Validation]
+        A3[OAuth 2.0]
+        A4[LDAP/AD Integration]
+        A5[MFA Support]
+    end
+    
+    subgraph "Layer 3: Authorization"
+        Z1[RBAC - Role Based]
+        Z2[ABAC - Attribute Based]
+        Z3[Policy Engine - OPA]
+        Z4[Resource Permissions]
+        Z5[Metadata Filters]
+    end
+    
+    subgraph "Layer 4: Rate Limiting"
+        R1[Per-User Limits]
+        R2[Per-IP Limits]
+        R3[Per-API Key Limits]
+        R4[Adaptive Throttling]
+        R5[Burst Control]
+    end
+    
+    subgraph "Layer 5: Data Protection"
+        D1[Input Validation]
+        D2[SQL Injection Prevention]
+        D3[XSS Protection]
+        D4[JWE Encryption]
+        D5[Data Masking]
+    end
+    
+    subgraph "Layer 6: Audit & Monitoring"
+        M1[Request Logging]
+        M2[Security Events]
+        M3[Anomaly Detection]
+        M4[Compliance Reporting]
+        M5[Alert System]
+    end
+    
+    %% Flow through layers
+    N1 --> A1
+    N2 --> A2
+    N3 --> A3
+    N4 --> A4
+    
+    A1 --> Z1
+    A2 --> Z2
+    A3 --> Z3
+    A4 --> Z4
+    A5 --> Z5
+    
+    Z1 --> R1
+    Z2 --> R2
+    Z3 --> R3
+    Z4 --> R4
+    Z5 --> R5
+    
+    R1 --> D1
+    R2 --> D2
+    R3 --> D3
+    R4 --> D4
+    R5 --> D5
+    
+    D1 --> M1
+    D2 --> M2
+    D3 --> M3
+    D4 --> M4
+    D5 --> M5
+    
+    style N1 fill:#FFEBEE
+    style N2 fill:#FFEBEE
+    style N3 fill:#FFEBEE
+    style N4 fill:#FFEBEE
+    
+    style A1 fill:#E3F2FD
+    style A2 fill:#E3F2FD
+    style A3 fill:#E3F2FD
+    style A4 fill:#E3F2FD
+    style A5 fill:#E3F2FD
+    
+    style Z1 fill:#F3E5F5
+    style Z2 fill:#F3E5F5
+    style Z3 fill:#F3E5F5
+    style Z4 fill:#F3E5F5
+    style Z5 fill:#F3E5F5
+    
+    style R1 fill:#FFF3E0
+    style R2 fill:#FFF3E0
+    style R3 fill:#FFF3E0
+    style R4 fill:#FFF3E0
+    style R5 fill:#FFF3E0
+    
+    style D1 fill:#E8F5E9
+    style D2 fill:#E8F5E9
+    style D3 fill:#E8F5E9
+    style D4 fill:#E8F5E9
+    style D5 fill:#E8F5E9
+    
+    style M1 fill:#F1F8E9
+    style M2 fill:#F1F8E9
+    style M3 fill:#F1F8E9
+    style M4 fill:#F1F8E9
+    style M5 fill:#F1F8E9

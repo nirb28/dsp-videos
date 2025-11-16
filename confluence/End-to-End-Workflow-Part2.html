@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI Platform - Workflow Guide Part 2</title>
+</head>
+<body>
+
+<h1>DSP AI Platform Workflow - Part 2: Production & Advanced Topics</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This section covers production deployment, monitoring, advanced use cases, and best practices for the DSP AI Platform workflow.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Production Deployment</h2>
+
+<h3>Docker Compose Setup</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">docker-compose.production.yml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+version: '3.8'
+
+services:
+  # Control Tower
+  control-tower:
+    image: dsp/control-tower:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - SUPERUSER_SECRET=${CT_SUPERUSER_SECRET}
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/control_tower
+    volumes:
+      - ./manifests:/app/manifests
+      - ./policies:/app/policies
+    depends_on:
+      - postgres
+    restart: always
+
+  # JWT Service
+  jwt-service:
+    image: dsp/jwt-service:latest
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${JWT_SECRET_KEY}
+      - JWE_ENCRYPTION_KEY=${JWE_KEY}
+      - LDAP_SERVER=${LDAP_SERVER}
+    volumes:
+      - ./config/users.yaml:/app/config/users.yaml
+      - ./config/api_keys:/app/config/api_keys
+    restart: always
+
+  # Front Door (FD2)
+  front-door:
+    image: dsp/front-door:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - CONTROL_TOWER_URL=http://control-tower:8000
+      - JWT_SERVICE_URL=http://jwt-service:5000
+      - LOG_LEVEL=INFO
+    depends_on:
+      - control-tower
+      - jwt-service
+    restart: always
+
+  # RAG Service
+  rag-service:
+    image: dsp/rag-service:latest
+    ports:
+      - "8001:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - ES_URL=http://elasticsearch:9200
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - redis
+      - elasticsearch
+    restart: always
+
+  # Supporting Services
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=control_tower
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    restart: always
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
+  prometheus_data:
+  grafana_data:
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Environment Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">.env.production</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Security
+CT_SUPERUSER_SECRET=your-secure-superuser-secret
+JWT_SECRET_KEY=your-jwt-secret-key-min-32-chars
+JWE_KEY=your-jwe-encryption-key
+
+# API Keys
+GROQ_API_KEY=gsk_your_groq_api_key
+OPENAI_API_KEY=sk-your-openai-api-key
+
+# LDAP (optional)
+LDAP_SERVER=ldap://ldap.company.com:389
+
+# Monitoring
+GRAFANA_PASSWORD=secure-grafana-password
+
+# Database
+DATABASE_URL=postgresql://user:pass@postgres:5432/control_tower
+
+# Service URLs (internal Docker network)
+CONTROL_TOWER_URL=http://control-tower:8000
+JWT_SERVICE_URL=http://jwt-service:5000
+RAG_SERVICE_URL=http://rag-service:8000
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Deployment Commands</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Deploy to Production</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# 1. Build images (if using custom builds)
+docker-compose -f docker-compose.production.yml build
+
+# 2. Start services
+docker-compose -f docker-compose.production.yml up -d
+
+# 3. Check service health
+docker-compose -f docker-compose.production.yml ps
+
+# 4. View logs
+docker-compose -f docker-compose.production.yml logs -f
+
+# 5. Scale services
+docker-compose -f docker-compose.production.yml up -d --scale rag-service=3
+
+# 6. Update services (zero-downtime)
+docker-compose -f docker-compose.production.yml pull
+docker-compose -f docker-compose.production.yml up -d --no-deps service-name
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Monitoring & Observability</h2>
+
+<h3>Prometheus Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">prometheus.yml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'control-tower'
+    static_configs:
+      - targets: ['control-tower:8000']
+    metrics_path: /metrics
+
+  - job_name: 'jwt-service'
+    static_configs:
+      - targets: ['jwt-service:5000']
+    metrics_path: /metrics
+
+  - job_name: 'front-door'
+    static_configs:
+      - targets: ['front-door:8080']
+    metrics_path: /metrics
+
+  - job_name: 'rag-service'
+    static_configs:
+      - targets: ['rag-service:8000']
+    metrics_path: /metrics
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['elasticsearch:9200']
+    metrics_path: /_prometheus/metrics
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Key Metrics to Monitor</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Service Metrics</ac:parameter>
+    <ac:rich-text-body>
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Key Metrics</th>
+                    <th>Alert Thresholds</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Control Tower</strong></td>
+                    <td>
+                        <ul>
+                            <li>Manifest operations/sec</li>
+                            <li>Policy evaluation time</li>
+                            <li>Module deployment success rate</li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul>
+                            <li>P95 latency > 500ms</li>
+                            <li>Error rate > 1%</li>
+                            <li>Deployment failures > 5%</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>JWT Service</strong></td>
+                    <td>
+                        <ul>
+                            <li>Token generation rate</li>
+                            <li>Authentication failures</li>
+                            <li>Token validation latency</li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul>
+                            <li>Auth failures > 10/min</li>
+                            <li>Token gen time > 100ms</li>
+                            <li>Service unavailable</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>RAG Service</strong></td>
+                    <td>
+                        <ul>
+                            <li>Query response time</li>
+                            <li>Document retrieval accuracy</li>
+                            <li>Embedding generation rate</li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul>
+                            <li>Query time > 2s</li>
+                            <li>Retrieval score < 0.7</li>
+                            <li>Memory usage > 80%</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Front Door</strong></td>
+                    <td>
+                        <ul>
+                            <li>Request routing latency</li>
+                            <li>Rate limit violations</li>
+                            <li>Circuit breaker trips</li>
+                        </ul>
+                    </td>
+                    <td>
+                        <ul>
+                            <li>Routing latency > 50ms</li>
+                            <li>Rate limits > 100/min</li>
+                            <li>Circuit trips > 3/hour</li>
+                        </ul>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Advanced Use Cases</h2>
+
+<h3>Use Case: Multi-Model Ensemble</h3>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Combining Multiple LLMs for Better Results</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Scenario:</strong> Use multiple LLMs and combine their outputs for higher accuracy</p>
+        
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">yaml</ac:parameter>
+            <ac:parameter ac:name="title">ensemble-promptfoo.yaml</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+description: "Multi-Model Ensemble Testing"
+
+prompts:
+  - id: classification_prompt
+    raw: |
+      Classify the following text into one of these categories:
+      [Technical, Business, Legal, General]
+      
+      Text: {{text}}
+      
+      Category:
+
+providers:
+  - id: openai:gpt-4
+    label: GPT-4
+    config:
+      temperature: 0.1
+
+  - id: anthropic:claude-3
+    label: Claude 3
+    config:
+      temperature: 0.1
+
+  - id: groq:llama3-70b
+    label: Llama 3
+    config:
+      temperature: 0.1
+
+tests:
+  - vars:
+      text: "The API endpoint returns a 404 error when querying the database"
+    assert:
+      - type: majority-vote
+        providers: [gpt-4, claude-3, llama3]
+        expected: "Technical"
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        
+        <p><strong>Manifest Configuration:</strong></p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "modules": [
+    {
+      "name": "ensemble-gpt4",
+      "type": "inference_endpoint",
+      "config": {
+        "model": "gpt-4",
+        "weight": 0.4
+      }
+    },
+    {
+      "name": "ensemble-claude",
+      "type": "inference_endpoint",
+      "config": {
+        "model": "claude-3",
+        "weight": 0.4
+      }
+    },
+    {
+      "name": "ensemble-llama",
+      "type": "inference_endpoint",
+      "config": {
+        "model": "llama3-70b",
+        "weight": 0.2
+      }
+    },
+    {
+      "name": "ensemble-aggregator",
+      "type": "langgraph_workflow",
+      "config": {
+        "workflow": "weighted_voting",
+        "inputs": ["ensemble-gpt4", "ensemble-claude", "ensemble-llama"]
+      }
+    }
+  ]
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Use Case: RAG with Knowledge Graph</h3>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Enhanced Retrieval with Neo4j</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Scenario:</strong> Use Neo4j knowledge graph for semantic relationship queries</p>
+        
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">cypher</ac:parameter>
+            <ac:parameter ac:name="title">Knowledge Graph Query</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+// Find related concepts to user query
+MATCH (q:Query {text: $query_text})
+MATCH (q)-[:SIMILAR_TO*1..3]-(c:Concept)
+MATCH (c)-[:RELATED_TO]-(d:Document)
+RETURN d.content, d.metadata
+ORDER BY d.relevance_score DESC
+LIMIT 10
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+        
+        <p><strong>Configuration:</strong></p>
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">json</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+{
+  "name": "knowledge-graph-rag",
+  "type": "rag_config",
+  "config": {
+    "vector_store": {
+      "type": "neo4j_knowledge_graph",
+      "neo4j_uri": "neo4j://localhost:7687",
+      "neo4j_user": "neo4j",
+      "neo4j_password": "${NEO4J_PASSWORD}",
+      "extraction_prompt": "Extract entities and relationships...",
+      "kg_llm_config_name": "entity-extraction-llm"
+    },
+    "retrieval_strategy": "graph_traversal",
+    "max_hops": 3
+  }
+}
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Use Case: Streaming Pipeline</h3>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Real-time Document Processing</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Scenario:</strong> Process documents in real-time as they arrive</p>
+        
+        <ac:structured-macro ac:name="code">
+            <ac:parameter ac:name="language">python</ac:parameter>
+            <ac:parameter ac:name="title">streaming_pipeline.py</ac:parameter>
+            <ac:plain-text-body><![CDATA[
+import asyncio
+from typing import AsyncGenerator
+import aiohttp
+
+class StreamingPipeline:
+    def __init__(self):
+        self.front_door_url = "http://localhost:8080"
+        
+    async def process_document_stream(
+        self, 
+        document_stream: AsyncGenerator
+    ):
+        """Process documents as they arrive"""
+        async with aiohttp.ClientSession() as session:
+            async for document in document_stream:
+                # Step 1: Extract text
+                text = await self.extract_text(document)
+                
+                # Step 2: Chunk document
+                chunks = await self.chunk_document(text)
+                
+                # Step 3: Generate embeddings
+                embeddings = await self.generate_embeddings(
+                    session, chunks
+                )
+                
+                # Step 4: Store in vector DB
+                await self.store_vectors(embeddings)
+                
+                # Step 5: Trigger notifications
+                await self.notify_completion(document.id)
+                
+                yield {
+                    "document_id": document.id,
+                    "status": "processed",
+                    "chunks": len(chunks)
+                }
+    
+    async def generate_embeddings(
+        self, 
+        session: aiohttp.ClientSession,
+        chunks: list
+    ):
+        """Generate embeddings via Front Door"""
+        async with session.post(
+            f"{self.front_door_url}/api/embeddings",
+            json={"texts": chunks}
+        ) as response:
+            return await response.json()
+            ]]></ac:plain-text-body>
+        </ac:structured-macro>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<h3>Prompt Engineering Guidelines</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Prompt Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ol>
+            <li><strong>Be Specific:</strong> Clear instructions reduce ambiguity</li>
+            <li><strong>Use Examples:</strong> Few-shot learning improves accuracy</li>
+            <li><strong>Structure Output:</strong> Request specific formats (JSON, lists)</li>
+            <li><strong>Test Extensively:</strong> Use promptfoo for comprehensive testing</li>
+            <li><strong>Version Control:</strong> Track prompt changes in Git</li>
+            <li><strong>Monitor Performance:</strong> Track accuracy metrics over time</li>
+        </ol>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Manifest Management</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#FFF0B3</ac:parameter>
+    <ac:parameter ac:name="title">Manifest Best Practices</ac:parameter>
+    <ac:rich-text-body>
+        <ol>
+            <li><strong>Use Templates:</strong> Start with manifestor CLI templates</li>
+            <li><strong>Environment Variables:</strong> Never hardcode secrets</li>
+            <li><strong>Dependency Order:</strong> Add dependencies before dependents</li>
+            <li><strong>Naming Convention:</strong> Use {project}-{module}-{type}</li>
+            <li><strong>Version Tags:</strong> Tag manifests with version numbers</li>
+            <li><strong>Documentation:</strong> Comment complex configurations</li>
+        </ol>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Security Considerations</h3>
+
+<ac:structured-macro ac:name="warning">
+    <ac:parameter ac:name="title">Security Checklist</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Enable JWT authentication in production</li>
+            <li>✅ Use JWE encryption for sensitive data</li>
+            <li>✅ Rotate API keys regularly</li>
+            <li>✅ Implement rate limiting</li>
+            <li>✅ Use HTTPS/TLS for all endpoints</li>
+            <li>✅ Audit log all API access</li>
+            <li>✅ Implement RBAC with metadata filters</li>
+            <li>✅ Regular security scans</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Troubleshooting Guide</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Common Issues and Solutions</ac:parameter>
+    <ac:rich-text-body>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Symptoms</th>
+                    <th>Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>JWT Token Invalid</strong></td>
+                    <td>401 Unauthorized errors</td>
+                    <td>
+                        <ul>
+                            <li>Check token expiration</li>
+                            <li>Verify secret key match</li>
+                            <li>Ensure correct algorithm</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Manifest Not Loading</strong></td>
+                    <td>Modules not discovered by FD</td>
+                    <td>
+                        <ul>
+                            <li>Verify Control Tower is running</li>
+                            <li>Check manifest JSON validity</li>
+                            <li>Ensure proper permissions</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>RAG Poor Results</strong></td>
+                    <td>Irrelevant documents returned</td>
+                    <td>
+                        <ul>
+                            <li>Adjust chunk size/overlap</li>
+                            <li>Try different embedding model</li>
+                            <li>Enable reranking</li>
+                            <li>Use query expansion</li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>High Latency</strong></td>
+                    <td>Slow API responses</td>
+                    <td>
+                        <ul>
+                            <li>Enable caching</li>
+                            <li>Reduce retrieval K value</li>
+                            <li>Use faster models</li>
+                            <li>Scale services horizontally</li>
+                        </ul>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="End-to-End Workflow Guide"/></ac:link> - Part 1: Basic Workflow</li>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="Front Door Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="JWT Service Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 1"/></ac:link></li>
+</ul>
+
+<hr/>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Next Steps</ac:parameter>
+    <ac:rich-text-body>
+        <p>After completing this workflow:</p>
+        <ol>
+            <li>Set up monitoring dashboards in Grafana</li>
+            <li>Configure alerting rules in Prometheus</li>
+            <li>Implement CI/CD pipelines</li>
+            <li>Schedule regular prompt testing</li>
+            <li>Document your specific use cases</li>
+        </ol>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+</body>
+</html>

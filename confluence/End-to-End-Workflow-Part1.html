@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP AI Platform - End-to-End Workflow Guide Part 1</title>
+</head>
+<body>
+
+<h1>DSP AI Platform: From Use Case to Production (Part 1)</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide walks you through the complete workflow of taking an AI use case from concept to production deployment using the DSP AI Platform. Part 1 covers defining use cases, testing prompts with promptfoo, and generating manifests with the Control Tower CLI.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>Complete Workflow</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌──────────────────────────────────────────────────────────────┐
+│                    DSP AI Platform Workflow                  │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. Define Use Case                                         │
+│     └─> Identify requirements and objectives                │
+│                                                              │
+│  2. Develop & Test Prompts                                  │
+│     └─> Use promptfoo for comprehensive testing             │
+│                                                              │
+│  3. Generate Project Manifest                               │
+│     └─> Use Control Tower Manifestor CLI                    │
+│                                                              │
+│  4. Configure Services                                      │
+│     └─> Set up JWT, RAG, and other modules                  │
+│                                                              │
+│  5. Deploy with Front Door                                  │
+│     └─> Route and manage API endpoints                      │
+│                                                              │
+│  6. Monitor & Optimize                                      │
+│     └─> Track performance and iterate                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Step 1: Define Your Use Case</h2>
+
+<h3>Example Use Cases</h3>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Use Case 1: Customer Support Chatbot</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Objective:</strong> Automate customer support responses using company documentation</p>
+        <p><strong>Requirements:</strong></p>
+        <ul>
+            <li>Access to product documentation and FAQs</li>
+            <li>Natural language understanding</li>
+            <li>Contextual responses</li>
+            <li>Authentication for sensitive queries</li>
+        </ul>
+        <p><strong>Components Needed:</strong></p>
+        <ul>
+            <li>RAG for document retrieval</li>
+            <li>LLM for response generation</li>
+            <li>JWT for authentication</li>
+            <li>API Gateway for routing</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Use Case 2: Code Translation Service</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Objective:</strong> Convert SAS code to Python automatically</p>
+        <p><strong>Requirements:</strong></p>
+        <ul>
+            <li>Code parsing and understanding</li>
+            <li>Syntax translation</li>
+            <li>Library mapping</li>
+            <li>Validation and testing</li>
+        </ul>
+        <p><strong>Components Needed:</strong></p>
+        <ul>
+            <li>Inference endpoint for code LLM</li>
+            <li>Custom prompts for translation</li>
+            <li>Validation service</li>
+            <li>Monitoring for accuracy</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Use Case 3: Document Analysis Pipeline</ac:parameter>
+    <ac:rich-text-body>
+        <p><strong>Objective:</strong> Extract insights from financial reports</p>
+        <p><strong>Requirements:</strong></p>
+        <ul>
+            <li>PDF processing</li>
+            <li>Entity extraction</li>
+            <li>Sentiment analysis</li>
+            <li>Summary generation</li>
+        </ul>
+        <p><strong>Components Needed:</strong></p>
+        <ul>
+            <li>Document processor</li>
+            <li>Multiple LLM endpoints</li>
+            <li>Data pipeline for ETL</li>
+            <li>Storage for results</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Step 2: Test Prompts with Promptfoo</h2>
+
+<h3>What is Promptfoo?</h3>
+<p>Promptfoo is a testing framework for LLM prompts that helps you evaluate prompt performance across different models and test cases.</p>
+
+<h3>Setting Up Promptfoo</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Install Promptfoo</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Install promptfoo globally
+npm install -g promptfoo
+
+# Or use npx (no installation needed)
+npx promptfoo@latest init
+
+# Verify installation
+promptfoo --version
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Example 1: Customer Support Prompt Testing</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">promptfooconfig.yaml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Customer Support Chatbot Configuration
+description: "Customer Support Response Testing"
+
+prompts:
+  - id: support_v1
+    label: "Basic Support Prompt"
+    raw: |
+      You are a helpful customer support agent for TechCorp.
+      Use the following context to answer the customer's question:
+      
+      Context: {{context}}
+      
+      Customer Question: {{query}}
+      
+      Provide a helpful, accurate, and friendly response.
+
+  - id: support_v2
+    label: "Enhanced Support Prompt"
+    raw: |
+      You are an expert customer support specialist at TechCorp.
+      
+      CONTEXT INFORMATION:
+      {{context}}
+      
+      CUSTOMER INQUIRY:
+      {{query}}
+      
+      INSTRUCTIONS:
+      1. Analyze the customer's question carefully
+      2. Use only information from the provided context
+      3. If the answer isn't in the context, politely say so
+      4. Be concise but thorough
+      5. Maintain a professional and friendly tone
+      
+      Response:
+
+providers:
+  - id: openai:gpt-4
+    label: GPT-4
+    config:
+      temperature: 0.3
+      max_tokens: 500
+
+  - id: groq:llama3-70b
+    label: Llama 3 70B
+    config:
+      apiBaseUrl: https://api.groq.com/openai/v1
+      apiKey: ${GROQ_API_KEY}
+      temperature: 0.3
+      max_tokens: 500
+
+tests:
+  - description: "Product return policy"
+    vars:
+      context: |
+        TechCorp Return Policy:
+        - 30-day return window for unopened products
+        - 14-day return for opened products with defects
+        - Original receipt required
+        - Shipping costs non-refundable
+      query: "Can I return a laptop I bought 3 weeks ago?"
+    assert:
+      - type: contains
+        value: "30-day"
+      - type: contains
+        value: "return"
+      - type: not-contains
+        value: "I don't know"
+
+  - description: "Technical support"
+    vars:
+      context: |
+        Troubleshooting WiFi Issues:
+        1. Restart your router
+        2. Check cable connections
+        3. Update network drivers
+        4. Run network diagnostics
+      query: "My WiFi keeps disconnecting"
+    assert:
+      - type: contains-any
+        value: ["restart", "router", "diagnostics"]
+      - type: llm-rubric
+        value: "Response provides clear troubleshooting steps"
+
+  - description: "Out of context question"
+    vars:
+      context: |
+        Product catalog includes laptops, desktops, and accessories.
+      query: "What's your competitor's pricing?"
+    assert:
+      - type: llm-rubric
+        value: "Response politely indicates information is not available"
+      - type: not-contains
+        value: "competitor pricing"
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Running Promptfoo Tests</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Execute Tests</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Run all tests
+promptfoo eval
+
+# Run with specific output format
+promptfoo eval --output results.json
+
+# View results in web UI
+promptfoo view
+
+# Generate detailed report
+promptfoo eval --output results.html --output-format html
+
+# Run specific test cases
+promptfoo eval --filter "return policy"
+
+# Compare multiple prompts
+promptfoo eval --prompts support_v1,support_v2
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Example 2: Code Translation Prompt Testing</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">sas2py-promptfoo.yaml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+description: "SAS to Python Code Translation Testing"
+
+prompts:
+  - file: prompts/sas2py_basic.txt
+  - file: prompts/sas2py_advanced.txt
+
+providers:
+  - id: openai:gpt-4
+    label: GPT-4 Code
+    config:
+      temperature: 0.1
+      max_tokens: 2000
+
+  - id: anthropic:claude-3
+    label: Claude 3
+    config:
+      temperature: 0.1
+      max_tokens: 2000
+
+tests:
+  - description: "Simple DATA step translation"
+    vars:
+      sas_code: |
+        DATA work.output;
+          SET work.input;
+          new_var = old_var * 2;
+        RUN;
+    assert:
+      - type: contains
+        value: "pandas"
+      - type: contains
+        value: "df"
+      - type: python
+        value: |
+          # Check if output is valid Python
+          import ast
+          try:
+            ast.parse(output)
+            return True
+          except SyntaxError:
+            return False
+
+  - description: "PROC SQL translation"
+    vars:
+      sas_code: |
+        PROC SQL;
+          CREATE TABLE result AS
+          SELECT id, SUM(amount) as total
+          FROM transactions
+          GROUP BY id;
+        QUIT;
+    assert:
+      - type: contains-any
+        value: ["groupby", "agg", "sum"]
+      - type: llm-rubric
+        value: "The Python code correctly implements SQL group by logic"
+
+  - description: "Macro variable translation"
+    vars:
+      sas_code: |
+        %LET threshold = 100;
+        DATA filtered;
+          SET original;
+          WHERE value > &threshold;
+        RUN;
+    assert:
+      - type: contains
+        value: "threshold = 100"
+      - type: contains-any
+        value: ["query", "loc", "filter"]
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Analyzing Test Results</h3>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Promptfoo Metrics</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Pass Rate:</strong> Percentage of assertions passed</li>
+            <li><strong>Latency:</strong> Response time for each provider</li>
+            <li><strong>Cost:</strong> Token usage and estimated costs</li>
+            <li><strong>Quality Score:</strong> LLM-judged quality metrics</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="End-to-End Workflow Part 1B"/></ac:link> - Manifest Generation and Deployment</li>
+    <li><ac:link><ri:page ri:content-title="End-to-End Workflow Part 2"/></ac:link> - Production Deployment & Advanced Topics</li>
+    <li><ac:link><ri:page ri:content-title="Workflow Quick Reference"/></ac:link> - Quick Start Commands</li>
+</ul>
+
+<hr/>
+
+<ac:structured-macro ac:name="info">
+    <ac:parameter ac:name="title">Next: Manifest Generation</ac:parameter>
+    <ac:rich-text-body>
+        <p>Continue to <strong>Part 1B</strong> to learn about:</p>
+        <ul>
+            <li>Using the Control Tower Manifestor CLI</li>
+            <li>Creating project manifests interactively</li>
+            <li>Deploying with Front Door and JWT</li>
+            <li>Integration testing</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+</body>
+</html>

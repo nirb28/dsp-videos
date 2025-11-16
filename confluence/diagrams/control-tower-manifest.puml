@@ -1,0 +1,149 @@
+@startuml Control_Tower_Manifest_System
+!theme blueprint
+title Control Tower - Manifest System Architecture
+
+package "Manifest Components" {
+    class Manifest {
+        +project_id: String
+        +project_name: String
+        +owner: String
+        +status: String
+        +environment: String
+        +modules: List[Module]
+        +created_at: DateTime
+        +updated_at: DateTime
+        --
+        +validate()
+        +add_module()
+        +remove_module()
+        +get_dependencies()
+    }
+    
+    abstract class Module {
+        +name: String
+        +type: String
+        +config: Dict
+        +dependencies: List[String]
+        --
+        +validate_config()
+        +resolve_variables()
+    }
+    
+    class JWTModule {
+        +jwt_service_url: String
+        +consumer_key: String
+        +rate_limit: Integer
+        +token_expiration: Integer
+        +jwe_enabled: Boolean
+    }
+    
+    class RAGModule {
+        +rag_service_url: String
+        +configuration_name: String
+        +vector_store: VectorStoreConfig
+        +embedding: EmbeddingConfig
+        +chunking: ChunkingConfig
+    }
+    
+    class InferenceModule {
+        +model: String
+        +endpoint: String
+        +api_key: String
+        +max_tokens: Integer
+        +temperature: Float
+        +system_prompt: String
+    }
+    
+    class VaultModule {
+        +vault_url: String
+        +auth_method: String
+        +kv_mount_point: String
+        +policies: List[String]
+    }
+    
+    class LangGraphModule {
+        +workflow_name: String
+        +graph_definition: GraphDef
+        +state_schema: Dict
+        +checkpointing: CheckpointConfig
+    }
+    
+    class APISIXModule {
+        +routes: List[Route]
+        +upstreams: List[Upstream]
+        +plugins: List[Plugin]
+    }
+}
+
+package "Manifest Management" {
+    class ManifestManager {
+        -manifests: Dict[String, Manifest]
+        --
+        +create_manifest()
+        +get_manifest()
+        +update_manifest()
+        +delete_manifest()
+        +validate_manifest()
+        +list_manifests()
+    }
+    
+    class DependencyResolver {
+        --
+        +resolve_dependencies()
+        +check_circular_deps()
+        +get_dependency_order()
+        +validate_deps_exist()
+    }
+    
+    class VariableResolver {
+        --
+        +resolve_env_vars()
+        +resolve_vault_refs()
+        +resolve_config_refs()
+    }
+    
+    class ManifestValidator {
+        --
+        +validate_structure()
+        +validate_modules()
+        +validate_dependencies()
+        +validate_environment()
+    }
+}
+
+package "Storage" {
+    class FileStorage {
+        -base_path: String
+        --
+        +save_manifest()
+        +load_manifest()
+        +delete_manifest()
+        +list_files()
+    }
+    
+    class DatabaseStorage {
+        -connection: DBConnection
+        --
+        +save_manifest()
+        +load_manifest()
+        +query_manifests()
+    }
+}
+
+' Relationships
+Manifest "1" *-- "many" Module : contains
+Module <|-- JWTModule
+Module <|-- RAGModule
+Module <|-- InferenceModule
+Module <|-- VaultModule
+Module <|-- LangGraphModule
+Module <|-- APISIXModule
+
+ManifestManager --> Manifest : manages
+ManifestManager --> DependencyResolver : uses
+ManifestManager --> VariableResolver : uses
+ManifestManager --> ManifestValidator : uses
+ManifestManager --> FileStorage : stores in
+ManifestManager --> DatabaseStorage : stores in
+
+@enduml

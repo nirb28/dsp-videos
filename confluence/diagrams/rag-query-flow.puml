@@ -1,0 +1,74 @@
+@startuml RAG_Query_Flow
+!theme blueprint
+title RAG Service - Query Processing Flow
+
+participant "Client" as client
+participant "Front Door" as fd
+participant "JWT Service" as jwt
+participant "RAG Service" as rag
+participant "Query Expansion" as qe
+participant "Vector Store" as vector
+participant "Reranker" as rerank
+participant "LLM" as llm
+
+autonumber
+
+client -> fd: POST /api/query\n{query, config}
+activate fd
+
+fd -> jwt: Validate Token
+activate jwt
+jwt --> fd: User Claims + Metadata Filter
+deactivate jwt
+
+fd -> rag: Forward Request + Auth
+activate rag
+
+opt Query Expansion Enabled
+    rag -> qe: Expand Query
+    activate qe
+    qe -> llm: Generate Variations
+    activate llm
+    llm --> qe: Query Variations
+    deactivate llm
+    qe --> rag: Expanded Queries[]
+    deactivate qe
+end
+
+rag -> vector: Search Documents
+activate vector
+note right of vector
+  Apply filters:
+  * Similarity threshold
+  * Metadata filters
+  * JWT filters
+end note
+vector --> rag: Retrieved Documents[]
+deactivate vector
+
+opt Reranking Enabled
+    rag -> rerank: Rerank Documents
+    activate rerank
+    rerank -> rerank: Score & Sort
+    rerank --> rag: Reranked Documents[]
+    deactivate rerank
+end
+
+rag -> llm: Generate Answer
+activate llm
+note right of llm
+  Context:
+  * Retrieved documents
+  * System prompt
+  * User query
+end note
+llm --> rag: Generated Response
+deactivate llm
+
+rag --> fd: Response + Sources
+deactivate rag
+
+fd --> client: Final Response
+deactivate fd
+
+@enduml

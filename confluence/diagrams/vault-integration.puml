@@ -1,0 +1,117 @@
+@startuml Vault_Integration_Architecture
+!theme blueprint
+title HashiCorp Vault Integration with Control Tower
+
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
+
+package "Control Tower" #E8F5E9 {
+    component "Manifest Processor" as mp {
+        [Variable Resolver]
+        [Secret Injector]
+    }
+    
+    component "Vault Client" as vc {
+        [Auth Manager]
+        [Secret Reader]
+        [Lease Manager]
+    }
+}
+
+package "HashiCorp Vault" #FFE0B2 {
+    component "Auth Methods" as auth {
+        [Token Auth]
+        [AppRole Auth]
+        [Kubernetes Auth]
+        [LDAP Auth]
+    }
+    
+    component "Secret Engines" as engines {
+        [KV v2 Store]
+        [Database Engine]
+        [Transit Engine]
+        [PKI Engine]
+    }
+    
+    component "Policies" as policies {
+        [Read Policy]
+        [Write Policy]
+        [Admin Policy]
+    }
+    
+    database "Audit Log" as audit
+}
+
+package "Secret Types" #E3F2FD {
+    component "Static Secrets" as static {
+        [API Keys]
+        [Passwords]
+        [Certificates]
+        [Config Data]
+    }
+    
+    component "Dynamic Secrets" as dynamic {
+        [DB Credentials]
+        [Cloud Credentials]
+        [SSH Keys]
+    }
+    
+    component "Encryption Services" as encrypt {
+        [Data Encryption]
+        [Data Decryption]
+        [Key Rotation]
+    }
+}
+
+package "Services Using Secrets" #F3E5F5 {
+    [JWT Service] as jwt
+    [RAG Service] as rag
+    [Front Door] as fd
+    [LLM Services] as llm
+}
+
+' Authentication flow
+mp --> vc : Request secrets
+vc --> auth : Authenticate
+auth --> policies : Check permissions
+policies --> engines : Authorized access
+
+' Secret retrieval
+engines --> static : Retrieve
+engines --> dynamic : Generate
+engines --> encrypt : Encrypt/Decrypt
+
+' Secret injection
+static --> vc : Return secrets
+dynamic --> vc : Return credentials
+encrypt --> vc : Return encrypted data
+vc --> mp : Inject into manifest
+
+' Service consumption
+mp --> jwt : Configured with secrets
+mp --> rag : Configured with secrets
+mp --> fd : Configured with secrets
+mp --> llm : Configured with secrets
+
+' Audit trail
+auth --> audit : Log access
+engines --> audit : Log operations
+policies --> audit : Log decisions
+
+note right of engines
+    Secret Engines:
+    * KV v2: Versioned secrets
+    * Database: Dynamic DB creds
+    * Transit: Encryption as service
+    * PKI: Certificate generation
+end note
+
+note left of policies
+    Policy Examples:
+    * ai-platform-read
+    * ai-platform-write
+    * database-creds-generate
+    * transit-encrypt-decrypt
+end note
+
+@enduml

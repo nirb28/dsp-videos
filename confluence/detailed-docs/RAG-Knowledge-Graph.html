@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RAG Service - Knowledge Graph Integration</title>
+</head>
+<body>
+
+<h1>RAG Service - Knowledge Graph Integration</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers the Neo4j knowledge graph integration with the RAG service, enabling semantic relationship extraction, graph-based retrieval, and entity-relationship mapping for enhanced document understanding.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>Knowledge Graph Architecture</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────────────────────────────────────────────────────────┐
+│                 Knowledge Graph Pipeline                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Document Input                                            │
+│       ↓                                                    │
+│  Text Extraction                                           │
+│       ↓                                                    │
+│  Entity Recognition (NER)                                  │
+│       ↓                                                    │
+│  Relationship Extraction                                   │
+│       ↓                                                    │
+│  Graph Construction                                        │
+│       ↓                                                    │
+│  ┌─────────────────────────────────────┐                  │
+│  │         Neo4j Graph Database         │                  │
+│  │                                      │                  │
+│  │  (Person)--[WORKS_FOR]-->(Company)  │                  │
+│  │     ↓                                │                  │
+│  │  [LOCATED_IN]                        │                  │
+│  │     ↓                                │                  │
+│  │  (Location)                          │                  │
+│  └─────────────────────────────────────┘                  │
+│       ↓                                                    │
+│  Graph Queries & Traversal                                 │
+│       ↓                                                    │
+│  Semantic Search Results                                   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Configuration</h2>
+
+<h3>Neo4j Knowledge Graph Setup</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">knowledge-graph-config.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "configuration_name": "knowledge-graph-rag",
+  "vector_store": {
+    "type": "neo4j_knowledge_graph",
+    "neo4j_uri": "neo4j://localhost:7687",
+    "neo4j_user": "neo4j",
+    "neo4j_password": "${NEO4J_PASSWORD}",
+    "neo4j_database": "rag",
+    "kg_llm_config_name": "entity-extraction-llm",
+    "extraction_prompt": "Extract entities and relationships from the following text. Identify people, organizations, locations, events, and their relationships.",
+    "node_properties": ["name", "type", "description", "source"],
+    "relationship_properties": ["type", "weight", "confidence"],
+    "embedding_dimension": 384
+  },
+  "chunking": {
+    "strategy": "semantic",
+    "chunk_size": 500,
+    "chunk_overlap": 50
+  },
+  "embedding": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2"
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Entity and Relationship Extraction</h2>
+
+<h3>LangGraph Transformer Implementation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">knowledge_graph_extractor.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from langchain_experimental.graph_transformers import LLMGraphTransformer
+from langchain_core.documents import Document
+from neo4j import GraphDatabase
+from typing import List, Dict, Any, Tuple
+import asyncio
+
+class KnowledgeGraphExtractor:
+    def __init__(self, neo4j_config: Dict[str, Any], llm):
+        self.driver = GraphDatabase.driver(
+            neo4j_config['neo4j_uri'],
+            auth=(neo4j_config['neo4j_user'], neo4j_config['neo4j_password'])
+        )
+        self.llm = llm
+        self.transformer = LLMGraphTransformer(
+            llm=llm,
+            allowed_nodes=[
+                "Person", "Organization", "Location", 
+                "Event", "Concept", "Technology", 
+                "Product", "Date", "Metric"
+            ],
+            allowed_relationships=[
+                "WORKS_FOR", "LOCATED_IN", "PART_OF",
+                "RELATED_TO", "CREATED", "MANAGES",
+                "OWNS", "PARTNERS_WITH", "COMPETES_WITH",
+                "HAPPENED_ON", "PARTICIPATED_IN", "USES"
+            ],
+            node_properties=["description", "category", "importance"],
+            relationship_properties=["since", "until", "confidence", "source"]
+        )
+    
+    async def extract_and_store(self, documents: List[Document]) -> Dict[str, Any]:
+        """Extract entities and relationships from documents"""
+        
+        # Convert documents to graph documents
+        graph_documents = await self.transformer.aconvert_to_graph_documents(documents)
+        
+        stats = {
+            "documents_processed": len(documents),
+            "nodes_created": 0,
+            "relationships_created": 0,
+            "entities": {}
+        }
+        
+        with self.driver.session() as session:
+            for graph_doc in graph_documents:
+                # Store nodes
+                for node in graph_doc.nodes:
+                    self._create_node(session, node)
+                    stats["nodes_created"] += 1
+                    
+                    # Track entity types
+                    node_type = node.type
+                    stats["entities"][node_type] = stats["entities"].get(node_type, 0) + 1
+                
+                # Store relationships
+                for relationship in graph_doc.relationships:
+                    self._create_relationship(session, relationship)
+                    stats["relationships_created"] += 1
+        
+        return stats
+    
+    def _create_node(self, session, node):
+        """Create or merge node in Neo4j"""
+        
+        query = """
+        MERGE (n:{type} {{id: $id}})
+        SET n.name = $name,
+            n.description = $description,
+            n.properties = $properties,
+            n.created_at = timestamp()
+        RETURN n
+        """.format(type=node.type)
+        
+        session.run(
+            query,
+            id=node.id,
+            name=node.properties.get("name", node.id),
+            description=node.properties.get("description", ""),
+            properties=node.properties
+        )
+    
+    def _create_relationship(self, session, relationship):
+        """Create relationship between nodes"""
+        
+        query = """
+        MATCH (a {{id: $source_id}})
+        MATCH (b {{id: $target_id}})
+        MERGE (a)-[r:{type}]->(b)
+        SET r.properties = $properties,
+            r.created_at = timestamp()
+        RETURN r
+        """.format(type=relationship.type)
+        
+        session.run(
+            query,
+            source_id=relationship.source.id,
+            target_id=relationship.target.id,
+            properties=relationship.properties
+        )
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Graph Queries and Retrieval</h2>
+
+<h3>Cypher Query Examples</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">cypher</ac:parameter>
+    <ac:parameter ac:name="title">knowledge-graph-queries.cypher</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+// Find all entities related to a specific person
+MATCH (p:Person {name: $person_name})-[r]-(connected)
+RETURN p, type(r) as relationship, connected
+ORDER BY connected.importance DESC
+LIMIT 20
+
+// Find companies and their locations
+MATCH (c:Organization)-[:LOCATED_IN]->(l:Location)
+WHERE c.category = 'company'
+RETURN c.name as company, l.name as location
+
+// Find technology stack used by organizations
+MATCH (o:Organization)-[:USES]->(t:Technology)
+RETURN o.name as organization, collect(t.name) as technologies
+
+// Find people who work at the same company
+MATCH (p1:Person)-[:WORKS_FOR]->(c:Organization)<-[:WORKS_FOR]-(p2:Person)
+WHERE p1.id < p2.id
+RETURN p1.name, p2.name, c.name as company
+
+// Find events and participants
+MATCH (e:Event)<-[:PARTICIPATED_IN]-(p:Person)
+WHERE e.date >= date('2024-01-01')
+RETURN e.name as event, e.date, collect(p.name) as participants
+
+// Multi-hop relationship discovery
+MATCH path = (start:Person {name: $start_person})-[*1..3]-(end:Person {name: $end_person})
+RETURN path, length(path) as distance
+ORDER BY distance
+LIMIT 5
+
+// Find influential nodes (high degree centrality)
+MATCH (n)
+WITH n, size((n)--()) as degree
+WHERE degree > 10
+RETURN n.name, labels(n)[0] as type, degree
+ORDER BY degree DESC
+LIMIT 20
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Semantic Search with Graph Context</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">graph_semantic_search.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+class GraphSemanticSearch:
+    def __init__(self, neo4j_driver, embedding_service):
+        self.driver = neo4j_driver
+        self.embeddings = embedding_service
+    
+    async def search_with_context(
+        self, 
+        query: str, 
+        k: int = 10,
+        max_hops: int = 2
+    ) -> List[Dict[str, Any]]:
+        """Search using both embeddings and graph relationships"""
+        
+        # Get query embedding
+        query_embedding = await self.embeddings.embed_query(query)
+        
+        # Find similar nodes using vector similarity
+        similar_nodes = await self._vector_search(query_embedding, k)
+        
+        # Expand search using graph relationships
+        expanded_results = []
+        for node in similar_nodes:
+            context = await self._get_graph_context(node['id'], max_hops)
+            expanded_results.append({
+                'node': node,
+                'context': context,
+                'combined_score': self._calculate_combined_score(
+                    node['similarity'],
+                    context
+                )
+            })
+        
+        # Sort by combined score
+        expanded_results.sort(key=lambda x: x['combined_score'], reverse=True)
+        
+        return expanded_results[:k]
+    
+    async def _vector_search(self, embedding: List[float], k: int) -> List[Dict]:
+        """Vector similarity search in Neo4j"""
+        
+        query = """
+        CALL db.index.vector.queryNodes('document-embeddings', $k, $embedding)
+        YIELD node, score
+        RETURN node.id as id, 
+               node.name as name, 
+               node.type as type,
+               node.description as description,
+               score as similarity
+        """
+        
+        with self.driver.session() as session:
+            result = session.run(query, k=k, embedding=embedding)
+            return [dict(record) for record in result]
+    
+    async def _get_graph_context(self, node_id: str, max_hops: int) -> Dict:
+        """Get graph context around a node"""
+        
+        query = """
+        MATCH (n {id: $node_id})
+        OPTIONAL MATCH path = (n)-[*1..$max_hops]-(connected)
+        WITH n, connected, path
+        RETURN n,
+               collect(DISTINCT connected) as connected_nodes,
+               collect(DISTINCT path) as paths
+        """
+        
+        with self.driver.session() as session:
+            result = session.run(
+                query, 
+                node_id=node_id, 
+                max_hops=max_hops
+            )
+            
+            record = result.single()
+            if record:
+                return {
+                    'connected_nodes': len(record['connected_nodes']),
+                    'paths': len(record['paths']),
+                    'entities': self._extract_entities(record['connected_nodes'])
+                }
+            
+            return {}
+    
+    def _calculate_combined_score(
+        self, 
+        similarity: float, 
+        context: Dict
+    ) -> float:
+        """Combine vector similarity with graph importance"""
+        
+        # Weight factors
+        similarity_weight = 0.7
+        context_weight = 0.3
+        
+        # Calculate context score based on connections
+        context_score = min(1.0, context.get('connected_nodes', 0) / 20)
+        
+        return (similarity * similarity_weight) + (context_score * context_weight)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Advanced Graph Analytics</h2>
+
+<h3>Graph Algorithms</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">cypher</ac:parameter>
+    <ac:parameter ac:name="title">graph-algorithms.cypher</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+// PageRank - Find influential entities
+CALL gds.pageRank.stream('knowledge-graph')
+YIELD nodeId, score
+RETURN gds.util.asNode(nodeId).name AS name, score
+ORDER BY score DESC
+LIMIT 10
+
+// Community Detection - Find clusters
+CALL gds.louvain.stream('knowledge-graph')
+YIELD nodeId, communityId
+RETURN communityId, collect(gds.util.asNode(nodeId).name) as members
+ORDER BY size(members) DESC
+
+// Centrality Analysis
+CALL gds.betweenness.stream('knowledge-graph')
+YIELD nodeId, score
+RETURN gds.util.asNode(nodeId).name AS name, 
+       score as betweenness_centrality
+ORDER BY score DESC
+LIMIT 10
+
+// Similarity - Find similar entities
+CALL gds.nodeSimilarity.stream('knowledge-graph')
+YIELD node1, node2, similarity
+RETURN gds.util.asNode(node1).name AS entity1,
+       gds.util.asNode(node2).name AS entity2,
+       similarity
+ORDER BY similarity DESC
+LIMIT 20
+
+// Shortest Path between entities
+MATCH (start:Person {name: $person1}),
+      (end:Person {name: $person2})
+CALL gds.shortestPath.dijkstra.stream('knowledge-graph', {
+    sourceNode: start,
+    targetNode: end
+})
+YIELD path
+RETURN [node in nodes(path) | node.name] as path_names
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Use Cases</h2>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Expert Finding</ac:parameter>
+    <ac:rich-text-body>
+        <p>Find subject matter experts based on their connections and contributions</p>
+        <ul>
+            <li>Identify people connected to specific technologies</li>
+            <li>Find experts through publication relationships</li>
+            <li>Discover expertise networks</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Competitive Intelligence</ac:parameter>
+    <ac:rich-text-body>
+        <p>Map competitive landscape through entity relationships</p>
+        <ul>
+            <li>Track company partnerships and acquisitions</li>
+            <li>Identify technology adoption patterns</li>
+            <li>Monitor personnel movements between companies</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<ac:structured-macro ac:name="expand">
+    <ac:parameter ac:name="title">Research Discovery</ac:parameter>
+    <ac:rich-text-body>
+        <p>Connect research papers, authors, and concepts</p>
+        <ul>
+            <li>Find related research through citation networks</li>
+            <li>Identify research trends and emerging topics</li>
+            <li>Discover collaboration opportunities</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Performance Optimization</h2>
+
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="bgColor">#E3FCEF</ac:parameter>
+    <ac:parameter ac:name="title">Graph Optimization Tips</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Create indexes on frequently queried properties</li>
+            <li>✅ Use node labels to improve query performance</li>
+            <li>✅ Limit relationship traversal depth</li>
+            <li>✅ Batch node and relationship creation</li>
+            <li>✅ Use graph projections for analytics</li>
+            <li>✅ Implement caching for frequent queries</li>
+            <li>✅ Monitor query execution plans</li>
+            <li>✅ Regular graph database maintenance</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Index Creation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">cypher</ac:parameter>
+    <ac:parameter ac:name="title">create-indexes.cypher</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+// Create indexes for better performance
+CREATE INDEX person_name IF NOT EXISTS FOR (p:Person) ON (p.name);
+CREATE INDEX org_name IF NOT EXISTS FOR (o:Organization) ON (o.name);
+CREATE INDEX location_name IF NOT EXISTS FOR (l:Location) ON (l.name);
+
+// Create composite index
+CREATE INDEX person_org IF NOT EXISTS FOR (p:Person) ON (p.name, p.organization);
+
+// Create full-text search index
+CALL db.index.fulltext.createNodeIndex(
+  "searchIndex",
+  ["Person", "Organization", "Technology"],
+  ["name", "description"]
+);
+
+// Create vector index for embeddings
+CALL db.index.vector.createNodeIndex(
+  'document-embeddings',
+  'Document',
+  'embedding',
+  384,
+  'cosine'
+);
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="RAG Service Documentation Part 1"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="RAG-MCP-Server"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="RAG-Query-Expansion"/></ac:link></li>
+</ul>
+
+</body>
+</html>

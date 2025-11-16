@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JWT Service - JWE Encryption & Advanced Features</title>
+</head>
+<body>
+
+<h1>JWT Service - JWE Encryption & Advanced Features</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers JSON Web Encryption (JWE) implementation in the JWT Service, including encrypted tokens, secure payload handling, and advanced API key configurations.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>JWE Overview</h2>
+
+<h3>What is JWE?</h3>
+<p>JSON Web Encryption (JWE) provides confidentiality for JWT tokens by encrypting the payload, ensuring sensitive data cannot be read even if the token is intercepted.</p>
+
+<h3>JWE Structure</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+Standard JWT (JWS):
+header.payload.signature
+↓
+Base64 encoded, readable payload
+
+JWE Token:
+header.encrypted_key.iv.ciphertext.tag
+↓
+Encrypted payload, unreadable without key
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>JWE Implementation</h2>
+
+<h3>JWE Handler Class</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">jwe_handler.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from jose import jwe
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+import json
+import base64
+from typing import Dict, Any, Optional
+
+class JWEHandler:
+    def __init__(self, encryption_key: str):
+        """Initialize JWE handler with encryption key"""
+        self.algorithm = "dir"  # Direct key agreement
+        self.encryption = "A256GCM"  # AES-256-GCM
+        self.key = self._derive_key(encryption_key)
+    
+    def _derive_key(self, passphrase: str) -> bytes:
+        """Derive 256-bit key from passphrase"""
+        kdf = PBKDF2(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b'dsp-ai-platform-salt',
+            iterations=100000,
+        )
+        return base64.urlsafe_b64encode(
+            kdf.derive(passphrase.encode())
+        ).decode('utf-8')
+    
+    def encrypt_token(self, payload: Dict[str, Any]) -> str:
+        """Encrypt JWT payload to JWE token"""
+        try:
+            # Convert payload to JSON string
+            payload_json = json.dumps(payload)
+            
+            # Encrypt using JWE
+            encrypted = jwe.encrypt(
+                payload_json.encode('utf-8'),
+                self.key,
+                algorithm=self.algorithm,
+                encryption=self.encryption
+            )
+            
+            return encrypted.decode('utf-8')
+        except Exception as e:
+            raise ValueError(f"JWE encryption failed: {str(e)}")
+    
+    def decrypt_token(self, token: str) -> Dict[str, Any]:
+        """Decrypt JWE token to payload"""
+        try:
+            # Decrypt JWE token
+            decrypted = jwe.decrypt(
+                token.encode('utf-8'),
+                self.key
+            )
+            
+            # Parse JSON payload
+            payload = json.loads(decrypted.decode('utf-8'))
+            
+            return payload
+        except Exception as e:
+            raise ValueError(f"JWE decryption failed: {str(e)}")
+    
+    def create_encrypted_jwt(
+        self,
+        claims: Dict[str, Any],
+        additional_headers: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Create encrypted JWT with custom claims"""
+        
+        # Add standard claims
+        import time
+        now = int(time.time())
+        
+        claims.update({
+            'iat': now,
+            'exp': now + 3600,  # 1 hour expiration
+            'nbf': now,
+            'jti': self._generate_jti()
+        })
+        
+        # Add custom headers
+        headers = {
+            'typ': 'JWE',
+            'alg': self.algorithm,
+            'enc': self.encryption
+        }
+        
+        if additional_headers:
+            headers.update(additional_headers)
+        
+        # Create JWE token
+        return self.encrypt_token(claims)
+    
+    def _generate_jti(self) -> str:
+        """Generate unique JWT ID"""
+        import uuid
+        return str(uuid.uuid4())
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>API Key Configuration</h2>
+
+<h3>Dynamic API Key Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">api_key_config.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+import yaml
+import json
+
+class ModelConfig(BaseModel):
+    name: str
+    endpoint: str
+    api_key: str
+    max_tokens: int = 1024
+    temperature: float = 0.7
+    
+class RateLimitConfig(BaseModel):
+    requests_per_minute: int = 60
+    tokens_per_minute: int = 10000
+    requests_per_hour: int = 1000
+    concurrent_requests: int = 5
+
+class APIKeyConfig(BaseModel):
+    api_key: str
+    name: str
+    type: str  # 'tiered_model_exec', 'function_call', 'api_call'
+    models: List[ModelConfig] = []
+    rate_limits: RateLimitConfig
+    metadata: Dict[str, Any] = {}
+    permissions: List[str] = []
+    expires_at: Optional[str] = None
+    active: bool = True
+
+class APIKeyManager:
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.configs = self._load_configs()
+    
+    def _load_configs(self) -> Dict[str, APIKeyConfig]:
+        """Load API key configurations from file"""
+        configs = {}
+        
+        # Load from YAML files
+        import os
+        for filename in os.listdir(self.config_path):
+            if filename.endswith('.yaml'):
+                with open(os.path.join(self.config_path, filename)) as f:
+                    data = yaml.safe_load(f)
+                    config = APIKeyConfig(**data)
+                    configs[config.api_key] = config
+        
+        return configs
+    
+    def get_config(self, api_key: str) -> Optional[APIKeyConfig]:
+        """Get configuration for API key"""
+        return self.configs.get(api_key)
+    
+    def create_dynamic_claims(
+        self,
+        api_key: str,
+        request_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate dynamic claims based on configuration"""
+        
+        config = self.get_config(api_key)
+        if not config:
+            return {}
+        
+        claims = {
+            'api_key_name': config.name,
+            'type': config.type,
+            'permissions': config.permissions,
+            'metadata': config.metadata
+        }
+        
+        # Add dynamic claims based on type
+        if config.type == 'tiered_model_exec':
+            claims['allowed_models'] = [m.name for m in config.models]
+            claims['rate_limits'] = config.rate_limits.dict()
+            
+        elif config.type == 'function_call':
+            # Execute function to get claims
+            claims.update(self._execute_function(config, request_context))
+            
+        elif config.type == 'api_call':
+            # Call external API for claims
+            claims.update(self._call_api(config, request_context))
+        
+        return claims
+    
+    def _execute_function(
+        self,
+        config: APIKeyConfig,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute configured function for dynamic claims"""
+        
+        function_name = config.metadata.get('function_name')
+        if not function_name:
+            return {}
+        
+        # Import and execute function
+        import importlib
+        module_name, func_name = function_name.rsplit('.', 1)
+        module = importlib.import_module(module_name)
+        func = getattr(module, func_name)
+        
+        return func(context)
+    
+    async def _call_api(
+        self,
+        config: APIKeyConfig,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Call external API for dynamic claims"""
+        
+        import aiohttp
+        
+        api_url = config.metadata.get('api_url')
+        if not api_url:
+            return {}
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                api_url,
+                json=context,
+                headers={'Authorization': f'Bearer {config.api_key}'}
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+        
+        return {}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Advanced Token Features</h2>
+
+<h3>Token with Custom Claims</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">advanced_tokens.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List
+
+class AdvancedTokenGenerator:
+    def __init__(self, jwe_handler: JWEHandler, api_key_manager: APIKeyManager):
+        self.jwe = jwe_handler
+        self.api_keys = api_key_manager
+    
+    def generate_scoped_token(
+        self,
+        user_id: str,
+        scopes: List[str],
+        resources: List[str],
+        duration: int = 3600
+    ) -> str:
+        """Generate token with specific scopes and resources"""
+        
+        claims = {
+            'sub': user_id,
+            'scopes': scopes,
+            'resources': resources,
+            'type': 'scoped_access'
+        }
+        
+        # Add resource-specific permissions
+        permissions = {}
+        for resource in resources:
+            permissions[resource] = self._get_resource_permissions(resource, scopes)
+        
+        claims['permissions'] = permissions
+        
+        return self.jwe.create_encrypted_jwt(claims)
+    
+    def generate_delegation_token(
+        self,
+        delegator: str,
+        delegate: str,
+        permissions: List[str],
+        expires_in: int = 86400
+    ) -> str:
+        """Generate delegation token for temporary access"""
+        
+        claims = {
+            'sub': delegate,
+            'delegator': delegator,
+            'delegation_id': self._generate_delegation_id(),
+            'permissions': permissions,
+            'type': 'delegation',
+            'expires_at': (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
+        }
+        
+        return self.jwe.create_encrypted_jwt(claims)
+    
+    def generate_refresh_token(
+        self,
+        user_id: str,
+        session_id: str,
+        device_id: Optional[str] = None
+    ) -> str:
+        """Generate long-lived refresh token"""
+        
+        claims = {
+            'sub': user_id,
+            'session_id': session_id,
+            'device_id': device_id,
+            'type': 'refresh',
+            'exp': int((datetime.utcnow() + timedelta(days=30)).timestamp())
+        }
+        
+        # Add device binding if provided
+        if device_id:
+            claims['device_fingerprint'] = self._generate_device_fingerprint(device_id)
+        
+        return self.jwe.create_encrypted_jwt(claims)
+    
+    def generate_service_token(
+        self,
+        service_name: str,
+        target_service: str,
+        operations: List[str]
+    ) -> str:
+        """Generate service-to-service authentication token"""
+        
+        claims = {
+            'sub': f'service:{service_name}',
+            'aud': f'service:{target_service}',
+            'operations': operations,
+            'type': 'service',
+            'exp': int((datetime.utcnow() + timedelta(minutes=5)).timestamp())
+        }
+        
+        return self.jwe.create_encrypted_jwt(claims)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Token Validation</h2>
+
+<h3>Advanced Validation Logic</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">token_validator.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+class TokenValidator:
+    def __init__(self, jwe_handler: JWEHandler):
+        self.jwe = jwe_handler
+        self.revoked_tokens = set()  # In production, use Redis
+    
+    def validate_token(
+        self,
+        token: str,
+        required_scopes: Optional[List[str]] = None,
+        required_audience: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Comprehensive token validation"""
+        
+        try:
+            # Decrypt JWE token
+            claims = self.jwe.decrypt_token(token)
+            
+            # Check if token is revoked
+            jti = claims.get('jti')
+            if jti and jti in self.revoked_tokens:
+                raise ValueError("Token has been revoked")
+            
+            # Validate expiration
+            if 'exp' in claims:
+                if datetime.fromtimestamp(claims['exp']) < datetime.utcnow():
+                    raise ValueError("Token has expired")
+            
+            # Validate not before
+            if 'nbf' in claims:
+                if datetime.fromtimestamp(claims['nbf']) > datetime.utcnow():
+                    raise ValueError("Token not yet valid")
+            
+            # Validate audience
+            if required_audience:
+                aud = claims.get('aud')
+                if not aud or required_audience not in (aud if isinstance(aud, list) else [aud]):
+                    raise ValueError("Invalid audience")
+            
+            # Validate scopes
+            if required_scopes:
+                token_scopes = claims.get('scopes', [])
+                if not all(scope in token_scopes for scope in required_scopes):
+                    raise ValueError("Insufficient scopes")
+            
+            # Validate token type
+            token_type = claims.get('type')
+            if token_type == 'refresh':
+                raise ValueError("Refresh token cannot be used for API access")
+            
+            # Additional validations based on type
+            if token_type == 'delegation':
+                self._validate_delegation(claims)
+            elif token_type == 'service':
+                self._validate_service_token(claims)
+            
+            return claims
+            
+        except Exception as e:
+            raise ValueError(f"Token validation failed: {str(e)}")
+    
+    def _validate_delegation(self, claims: Dict[str, Any]):
+        """Validate delegation-specific claims"""
+        
+        # Check delegation expiry
+        expires_at = claims.get('expires_at')
+        if expires_at:
+            if datetime.fromisoformat(expires_at) < datetime.utcnow():
+                raise ValueError("Delegation has expired")
+        
+        # Verify delegator still has permissions
+        delegator = claims.get('delegator')
+        if not self._check_user_active(delegator):
+            raise ValueError("Delegator account is not active")
+    
+    def revoke_token(self, token: str):
+        """Revoke a token"""
+        
+        try:
+            claims = self.jwe.decrypt_token(token)
+            jti = claims.get('jti')
+            if jti:
+                self.revoked_tokens.add(jti)
+                # In production, store in Redis with TTL
+        except:
+            pass  # Token might be invalid already
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Configuration Examples</h2>
+
+<h3>API Key Configuration File</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">yaml</ac:parameter>
+    <ac:parameter ac:name="title">api_key_enterprise.yaml</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+api_key: sk-enterprise-001
+name: Enterprise Customer API Key
+type: tiered_model_exec
+active: true
+expires_at: "2025-12-31T23:59:59Z"
+
+models:
+  - name: gpt-4
+    endpoint: https://api.openai.com/v1/chat/completions
+    api_key: ${OPENAI_API_KEY}
+    max_tokens: 4096
+    temperature: 0.7
+  
+  - name: claude-3
+    endpoint: https://api.anthropic.com/v1/messages
+    api_key: ${ANTHROPIC_API_KEY}
+    max_tokens: 4096
+    temperature: 0.7
+
+rate_limits:
+  requests_per_minute: 100
+  tokens_per_minute: 50000
+  requests_per_hour: 5000
+  concurrent_requests: 10
+
+permissions:
+  - read:documents
+  - write:documents
+  - execute:models
+  - admin:configurations
+
+metadata:
+  customer_id: cust_12345
+  tier: enterprise
+  department: engineering
+  cost_center: AI-001
+  billing_contact: billing@example.com
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security Best Practices</h2>
+
+<ac:structured-macro ac:name="warning">
+    <ac:parameter ac:name="title">JWE Security Guidelines</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Use strong encryption keys (256-bit minimum)</li>
+            <li>✅ Rotate encryption keys regularly</li>
+            <li>✅ Store keys in secure vault (HashiCorp Vault, AWS KMS)</li>
+            <li>✅ Use different keys for different environments</li>
+            <li>✅ Implement key versioning for smooth rotation</li>
+            <li>✅ Monitor for suspicious token usage patterns</li>
+            <li>✅ Implement token revocation mechanism</li>
+            <li>✅ Use short expiration times for sensitive operations</li>
+            <li>✅ Audit all token generation and validation events</li>
+            <li>✅ Implement rate limiting per API key</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="JWT Service Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="JWT-API-Key-Management"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="JWT-LDAP-Integration"/></ac:link></li>
+</ul>
+
+</body>
+</html>

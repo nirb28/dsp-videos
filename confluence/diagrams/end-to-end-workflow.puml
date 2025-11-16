@@ -1,0 +1,103 @@
+@startuml End_to_End_Workflow
+!theme blueprint
+title DSP AI Platform - End-to-End Workflow
+
+skinparam activityBackgroundColor #E8F5E9
+skinparam activityBorderColor #4CAF50
+skinparam activityFontSize 12
+
+start
+
+:Define Use Case;
+note right
+  * Identify requirements
+  * Define objectives
+  * List components needed
+end note
+
+:Create Prompt Templates;
+note left
+  * Design prompts
+  * Define variables
+  * Set up test cases
+end note
+
+:Test with Promptfoo;
+note right
+  * Run evaluations
+  * Compare models
+  * Analyze results
+end note
+
+if (Tests Pass?) then (yes)
+  :Generate Manifest;
+  note left
+    Using Manifestor CLI:
+    * Create new manifest
+    * Add modules (JWT, RAG, LLM)
+    * Configure dependencies
+    * Save manifest
+  end note
+else (no)
+  :Refine Prompts;
+  backward:Test with Promptfoo;
+endif
+
+:Deploy to Control Tower;
+note right
+  * Upload manifest
+  * Verify configuration
+  * Check module status
+end note
+
+:Configure JWT Service;
+note left
+  * Create API keys
+  * Set up authentication
+  * Configure rate limits
+end note
+
+:Set Up RAG Service;
+note right
+  * Create configuration
+  * Upload documents
+  * Configure vector store
+  * Set up embeddings
+end note
+
+:Configure Front Door;
+note left
+  * Set up routes
+  * Configure plugins
+  * Enable monitoring
+end note
+
+:Integration Testing;
+note right
+  * Test JWT auth
+  * Test document retrieval
+  * Test end-to-end flow
+end note
+
+if (Integration Tests Pass?) then (yes)
+  :Deploy to Production;
+  note left
+    * Docker Compose up
+    * Configure monitoring
+    * Set up alerts
+  end note
+  
+  :Monitor & Optimize;
+  note right
+    * Check metrics
+    * Review logs
+    * Optimize performance
+  end note
+else (no)
+  :Debug Issues;
+  backward:Integration Testing;
+endif
+
+stop
+
+@enduml

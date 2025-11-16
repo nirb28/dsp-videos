@@ -1,0 +1,115 @@
+@startuml LangGraph_Workflow_Example
+!theme blueprint
+title LangGraph - Document Processing Workflow
+
+skinparam defaultFontSize 12
+skinparam stateFontSize 14
+skinparam stateBackgroundColor #E8F5E9
+
+state "Document Processing Workflow" as workflow {
+    
+    [*] --> DocumentInput : Start
+    
+    state "Document Input" as DocumentInput {
+        : Load document
+        : Validate format
+    }
+    
+    state "Text Extraction" as extraction {
+        : Extract text
+        : Clean content
+        : Split sections
+    }
+    
+    state "Classification" as classification {
+        : Classify document type
+        : Determine routing
+    }
+    
+    state "Conditional Router" as router <<choice>>
+    
+    state "Financial Processing" as financial {
+        : Extract financial data
+        : Calculate metrics
+        : Generate insights
+    }
+    
+    state "Legal Processing" as legal {
+        : Extract clauses
+        : Identify risks
+        : Check compliance
+    }
+    
+    state "Technical Processing" as technical {
+        : Extract specifications
+        : Parse code blocks
+        : Identify technologies
+    }
+    
+    state "General Processing" as general {
+        : Basic extraction
+        : Standard analysis
+    }
+    
+    state "Human Review" as review <<choice>>
+    
+    state "Human Approval" as approval {
+        : Send for review
+        : Wait for feedback
+        : Apply corrections
+    }
+    
+    state "Summarization" as summarize {
+        : Generate summary
+        : Extract key points
+        : Create metadata
+    }
+    
+    state "Quality Check" as quality <<choice>>
+    
+    state "Store Results" as store {
+        : Save to database
+        : Update indices
+        : Send notifications
+    }
+    
+    ' Flow
+    DocumentInput --> extraction : Valid
+    extraction --> classification : Extracted
+    classification --> router : Classified
+    
+    router --> financial : type=financial
+    router --> legal : type=legal
+    router --> technical : type=technical
+    router --> general : type=other
+    
+    financial --> review
+    legal --> review
+    technical --> review
+    general --> review
+    
+    review --> approval : needs_review=true
+    review --> summarize : needs_review=false
+    
+    approval --> summarize : approved
+    approval --> extraction : rejected
+    
+    summarize --> quality
+    
+    quality --> store : passed
+    quality --> review : failed
+    
+    store --> [*] : Complete
+}
+
+note right of workflow
+    LangGraph Features:
+    * Stateful execution
+    * Conditional routing
+    * Human-in-the-loop
+    * Checkpointing
+    * Parallel processing
+    * Error recovery
+end note
+
+@enduml

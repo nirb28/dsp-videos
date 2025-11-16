@@ -1,0 +1,67 @@
+sequenceDiagram
+    title MCP (Model Context Protocol) Communication Flow
+    
+    participant Client as AI Assistant<br/>(Claude/Cursor)
+    participant MCP as MCP Server<br/>(RAG Service)
+    participant Auth as Auth Service
+    participant RAG as RAG Core
+    participant VS as Vector Store
+    participant LLM as LLM Service
+    
+    %% Initialization
+    rect rgb(230, 245, 230)
+        note over Client,MCP: Initialization Phase
+        Client->>MCP: Initialize Connection<br/>{"method": "initialize", "clientInfo": {...}}
+        MCP->>Auth: Validate Client
+        Auth-->>MCP: Client Authorized
+        MCP-->>Client: Server Capabilities<br/>{"tools": [...], "version": "1.0"}
+    end
+    
+    %% Tool Discovery
+    rect rgb(230, 240, 255)
+        note over Client,MCP: Tool Discovery
+        Client->>MCP: List Tools<br/>{"method": "tools/list"}
+        MCP-->>Client: Available Tools<br/>[retrieve_documents, query_kb, search]
+    end
+    
+    %% Document Retrieval
+    rect rgb(255, 245, 230)
+        note over Client,RAG: Document Retrieval Flow
+        Client->>MCP: Call Tool<br/>{"method": "tools/call", "name": "retrieve_documents"}
+        MCP->>Auth: Check Permissions
+        Auth-->>MCP: Permissions OK
+        MCP->>RAG: Retrieve Request
+        RAG->>VS: Vector Search
+        VS-->>RAG: Similar Documents
+        RAG-->>MCP: Documents + Metadata
+        MCP-->>Client: Tool Response<br/>{"documents": [...], "scores": [...]}
+    end
+    
+    %% Query with Generation
+    rect rgb(245, 230, 255)
+        note over Client,LLM: Query with Generation Flow
+        Client->>MCP: Call Tool<br/>{"method": "tools/call", "name": "query_kb"}
+        MCP->>RAG: Query Request
+        RAG->>VS: Retrieve Context
+        VS-->>RAG: Context Documents
+        RAG->>LLM: Generate Answer<br/>with Context
+        LLM-->>RAG: Generated Response
+        RAG-->>MCP: Answer + Sources
+        MCP-->>Client: Tool Response<br/>{"answer": "...", "sources": [...]}
+    end
+    
+    %% Error Handling
+    rect rgb(255, 230, 230)
+        note over Client,MCP: Error Handling
+        Client->>MCP: Invalid Request
+        MCP-->>Client: Error Response<br/>{"error": {"code": -32602, "message": "..."}}
+    end
+    
+    %% Session Management
+    rect rgb(240, 240, 240)
+        note over Client,MCP: Session Management
+        Client->>MCP: Keep Alive
+        MCP-->>Client: Pong
+        Client->>MCP: Close Connection
+        MCP-->>Client: Goodbye
+    end

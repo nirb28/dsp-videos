@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Front Door - Security Design & Implementation</title>
+</head>
+<body>
+
+<h1>Front Door - Security Design & Implementation</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers the comprehensive security architecture of the Front Door (FD2) service, including authentication, authorization, rate limiting, and threat protection mechanisms.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security Architecture</h2>
+
+<h3>Defense in Depth</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">text</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+┌─────────────────────────────────────────────────────────────┐
+│                    Security Layers                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Layer 1: Network Security                                 │
+│    ├─> TLS/SSL Termination                                │
+│    ├─> IP Whitelisting                                    │
+│    └─> DDoS Protection                                    │
+│                                                             │
+│  Layer 2: Authentication                                   │
+│    ├─> JWT Bearer Tokens                                  │
+│    ├─> API Key Validation                                 │
+│    └─> OAuth 2.0 Support                                  │
+│                                                             │
+│  Layer 3: Authorization                                    │
+│    ├─> Role-Based Access Control (RBAC)                  │
+│    ├─> Resource-Level Permissions                         │
+│    └─> Policy-Based Access (OPA)                         │
+│                                                             │
+│  Layer 4: Rate Limiting                                    │
+│    ├─> Per-User Limits                                    │
+│    ├─> Per-IP Limits                                      │
+│    └─> Adaptive Throttling                               │
+│                                                             │
+│  Layer 5: Input Validation                                 │
+│    ├─> Request Schema Validation                          │
+│    ├─> SQL Injection Prevention                           │
+│    └─> XSS Protection                                     │
+│                                                             │
+│  Layer 6: Audit & Monitoring                               │
+│    ├─> Request Logging                                    │
+│    ├─> Security Event Tracking                            │
+│    └─> Anomaly Detection                                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Authentication Mechanisms</h2>
+
+<h3>JWT Bearer Token Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">jwt_auth_middleware.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from fastapi import Request, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from typing import Optional, Dict, Any
+
+class JWTBearer(HTTPBearer):
+    def __init__(self, auto_error: bool = True):
+        super(JWTBearer, self).__init__(auto_error=auto_error)
+        self.secret_key = os.getenv("JWT_SECRET_KEY")
+        self.algorithm = "HS256"
+        self.issuer = "dsp-ai-platform"
+        
+    async def __call__(self, request: Request):
+        credentials: HTTPAuthorizationCredentials = await super().__call__(request)
+        
+        if credentials:
+            if not credentials.scheme == "Bearer":
+                raise HTTPException(status_code=403, detail="Invalid authentication scheme")
+            
+            payload = self.verify_jwt(credentials.credentials)
+            if not payload:
+                raise HTTPException(status_code=403, detail="Invalid or expired token")
+            
+            # Add user context to request
+            request.state.user = payload
+            return payload
+        else:
+            raise HTTPException(status_code=403, detail="Invalid authorization code")
+    
+    def verify_jwt(self, token: str) -> Optional[Dict[str, Any]]:
+        try:
+            payload = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=[self.algorithm],
+                issuer=self.issuer,
+                options={"verify_exp": True}
+            )
+            
+            # Additional validation
+            if not self.validate_claims(payload):
+                return None
+                
+            return payload
+        except jwt.ExpiredSignatureError:
+            return None
+        except jwt.InvalidTokenError:
+            return None
+    
+    def validate_claims(self, payload: Dict[str, Any]) -> bool:
+        """Validate required claims"""
+        required_claims = ["sub", "iat", "exp", "roles"]
+        return all(claim in payload for claim in required_claims)
+
+# Usage in FastAPI
+jwt_bearer = JWTBearer()
+
+@app.get("/protected", dependencies=[Depends(jwt_bearer)])
+async def protected_route(request: Request):
+    user = request.state.user
+    return {"message": f"Hello {user['sub']}", "roles": user['roles']}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>API Key Authentication</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">api_key_auth.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from fastapi import Security, HTTPException, Depends
+from fastapi.security import APIKeyHeader, APIKeyQuery
+import hashlib
+import hmac
+
+class APIKeyAuth:
+    def __init__(self):
+        self.api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+        self.api_key_query = APIKeyQuery(name="api_key", auto_error=False)
+        
+    async def validate_api_key(
+        self,
+        api_key_header: str = Security(api_key_header),
+        api_key_query: str = Security(api_key_query)
+    ):
+        api_key = api_key_header or api_key_query
+        
+        if not api_key:
+            raise HTTPException(status_code=403, detail="API key required")
+        
+        # Validate API key format
+        if not self.is_valid_format(api_key):
+            raise HTTPException(status_code=403, detail="Invalid API key format")
+        
+        # Check against database
+        key_info = await self.get_api_key_info(api_key)
+        if not key_info:
+            raise HTTPException(status_code=403, detail="Invalid API key")
+        
+        # Check if key is active
+        if not key_info.get("active"):
+            raise HTTPException(status_code=403, detail="API key is inactive")
+        
+        # Check rate limits
+        if not await self.check_rate_limit(api_key, key_info):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        
+        return key_info
+    
+    def is_valid_format(self, api_key: str) -> bool:
+        """Validate API key format (e.g., sk-...)"""
+        return api_key.startswith("sk-") and len(api_key) == 51
+    
+    async def get_api_key_info(self, api_key: str) -> Optional[Dict]:
+        """Retrieve API key information from database"""
+        # Hash the API key for storage
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        
+        # Query database
+        result = await db.fetch_one(
+            "SELECT * FROM api_keys WHERE key_hash = ?",
+            key_hash
+        )
+        
+        return result
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Authorization & RBAC</h2>
+
+<h3>Role-Based Access Control</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">rbac_middleware.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from enum import Enum
+from typing import List, Set
+from functools import wraps
+
+class Role(Enum):
+    ADMIN = "admin"
+    DEVELOPER = "developer"
+    USER = "user"
+    VIEWER = "viewer"
+
+class Permission(Enum):
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    EXECUTE = "execute"
+    ADMIN = "admin"
+
+# Role-Permission mapping
+ROLE_PERMISSIONS = {
+    Role.ADMIN: {Permission.READ, Permission.WRITE, Permission.DELETE, 
+                 Permission.EXECUTE, Permission.ADMIN},
+    Role.DEVELOPER: {Permission.READ, Permission.WRITE, Permission.EXECUTE},
+    Role.USER: {Permission.READ, Permission.EXECUTE},
+    Role.VIEWER: {Permission.READ}
+}
+
+class RBACMiddleware:
+    def __init__(self):
+        self.role_permissions = ROLE_PERMISSIONS
+    
+    def require_permission(self, required_permissions: List[Permission]):
+        """Decorator to check permissions"""
+        def decorator(func):
+            @wraps(func)
+            async def wrapper(request: Request, *args, **kwargs):
+                user = request.state.user
+                user_roles = user.get("roles", [])
+                
+                # Get all permissions for user's roles
+                user_permissions = set()
+                for role_str in user_roles:
+                    role = Role(role_str)
+                    user_permissions.update(self.role_permissions.get(role, set()))
+                
+                # Check if user has required permissions
+                required_set = set(required_permissions)
+                if not required_set.issubset(user_permissions):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Insufficient permissions. Required: {required_permissions}"
+                    )
+                
+                return await func(request, *args, **kwargs)
+            return wrapper
+        return decorator
+
+# Usage
+rbac = RBACMiddleware()
+
+@app.post("/admin/users")
+@rbac.require_permission([Permission.ADMIN])
+async def create_user(request: Request, user_data: dict):
+    return {"message": "User created"}
+
+@app.get("/data")
+@rbac.require_permission([Permission.READ])
+async def read_data(request: Request):
+    return {"data": "..."}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Rate Limiting</h2>
+
+<h3>Adaptive Rate Limiting</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">rate_limiter.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+import time
+from typing import Dict, Optional
+import redis.asyncio as redis
+from fastapi import Request, HTTPException
+
+class AdaptiveRateLimiter:
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        self.default_limits = {
+            "requests_per_minute": 60,
+            "requests_per_hour": 1000,
+            "burst_size": 10
+        }
+    
+    async def check_rate_limit(
+        self,
+        request: Request,
+        user_id: Optional[str] = None
+    ) -> bool:
+        """Check if request should be rate limited"""
+        
+        # Get identifier (user ID or IP)
+        identifier = user_id or request.client.host
+        
+        # Get user's tier and limits
+        limits = await self.get_user_limits(identifier)
+        
+        # Check multiple time windows
+        for window, limit in limits.items():
+            key = f"rate_limit:{identifier}:{window}"
+            
+            # Use sliding window algorithm
+            current_time = time.time()
+            window_size = self.get_window_size(window)
+            window_start = current_time - window_size
+            
+            # Remove old entries
+            await self.redis.zremrangebyscore(key, 0, window_start)
+            
+            # Count requests in window
+            request_count = await self.redis.zcard(key)
+            
+            if request_count >= limit:
+                # Calculate retry after
+                oldest = await self.redis.zrange(key, 0, 0, withscores=True)
+                if oldest:
+                    retry_after = int(window_size - (current_time - oldest[0][1]))
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Rate limit exceeded",
+                        headers={"Retry-After": str(retry_after)}
+                    )
+            
+            # Add current request
+            await self.redis.zadd(key, {str(current_time): current_time})
+            await self.redis.expire(key, window_size)
+        
+        return True
+    
+    async def get_user_limits(self, identifier: str) -> Dict[str, int]:
+        """Get rate limits based on user tier"""
+        
+        # Check for custom limits
+        custom_limits = await self.redis.hgetall(f"custom_limits:{identifier}")
+        if custom_limits:
+            return {k.decode(): int(v) for k, v in custom_limits.items()}
+        
+        # Check user tier
+        tier = await self.redis.hget("user_tiers", identifier)
+        if tier:
+            return self.get_tier_limits(tier.decode())
+        
+        return self.default_limits
+    
+    def get_tier_limits(self, tier: str) -> Dict[str, int]:
+        """Get limits based on tier"""
+        tier_limits = {
+            "free": {"requests_per_minute": 20, "requests_per_hour": 100},
+            "basic": {"requests_per_minute": 60, "requests_per_hour": 1000},
+            "premium": {"requests_per_minute": 200, "requests_per_hour": 10000},
+            "enterprise": {"requests_per_minute": 1000, "requests_per_hour": 100000}
+        }
+        return tier_limits.get(tier, self.default_limits)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Input Validation & Sanitization</h2>
+
+<h3>Request Validation</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">input_validation.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from pydantic import BaseModel, validator, Field
+from typing import Optional, List
+import re
+import html
+
+class SecureRequestModel(BaseModel):
+    """Base model with security validations"""
+    
+    class Config:
+        # Strip whitespace
+        anystr_strip_whitespace = True
+        # Limit string size
+        max_anystr_length = 10000
+    
+    @validator('*', pre=True)
+    def sanitize_input(cls, v):
+        """Sanitize all string inputs"""
+        if isinstance(v, str):
+            # Remove null bytes
+            v = v.replace('\x00', '')
+            
+            # Escape HTML
+            v = html.escape(v)
+            
+            # Remove control characters
+            v = ''.join(char for char in v if ord(char) >= 32 or char == '\n')
+        
+        return v
+
+class QueryRequest(SecureRequestModel):
+    query: str = Field(..., min_length=1, max_length=1000)
+    context: Optional[str] = Field(None, max_length=5000)
+    
+    @validator('query')
+    def validate_query(cls, v):
+        """Validate query doesn't contain SQL injection attempts"""
+        sql_patterns = [
+            r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER)\b)",
+            r"(--|#|\/\*|\*\/)",
+            r"(\bOR\b.*=.*)",
+            r"(\bAND\b.*=.*)"
+        ]
+        
+        for pattern in sql_patterns:
+            if re.search(pattern, v, re.IGNORECASE):
+                raise ValueError("Potentially malicious input detected")
+        
+        return v
+
+class FileUploadRequest(SecureRequestModel):
+    filename: str = Field(..., max_length=255)
+    content_type: str = Field(..., regex="^[a-zA-Z0-9][a-zA-Z0-9\/\-\+\.]*$")
+    
+    @validator('filename')
+    def validate_filename(cls, v):
+        """Validate filename for path traversal attempts"""
+        # Remove path components
+        v = os.path.basename(v)
+        
+        # Check for suspicious patterns
+        if '..' in v or '/' in v or '\\' in v:
+            raise ValueError("Invalid filename")
+        
+        # Whitelist allowed extensions
+        allowed_extensions = ['.pdf', '.txt', '.docx', '.json']
+        if not any(v.endswith(ext) for ext in allowed_extensions):
+            raise ValueError("File type not allowed")
+        
+        return v
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security Headers</h2>
+
+<h3>Security Headers Middleware</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">security_headers.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        
+        # Remove sensitive headers
+        response.headers.pop("Server", None)
+        response.headers.pop("X-Powered-By", None)
+        
+        return response
+
+# Add to FastAPI app
+app.add_middleware(SecurityHeadersMiddleware)
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Audit Logging</h2>
+
+<h3>Security Event Logging</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">audit_logger.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+import json
+import logging
+from datetime import datetime
+from typing import Dict, Any
+
+class SecurityAuditLogger:
+    def __init__(self):
+        self.logger = logging.getLogger("security_audit")
+        handler = logging.FileHandler("security_audit.log")
+        handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        ))
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
+    
+    def log_authentication(
+        self,
+        event_type: str,
+        user_id: str,
+        ip_address: str,
+        success: bool,
+        details: Dict[str, Any] = None
+    ):
+        """Log authentication events"""
+        event = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": f"auth_{event_type}",
+            "user_id": user_id,
+            "ip_address": ip_address,
+            "success": success,
+            "details": details or {}
+        }
+        
+        self.logger.info(json.dumps(event))
+    
+    def log_authorization(
+        self,
+        user_id: str,
+        resource: str,
+        action: str,
+        allowed: bool,
+        reason: str = None
+    ):
+        """Log authorization decisions"""
+        event = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": "authorization",
+            "user_id": user_id,
+            "resource": resource,
+            "action": action,
+            "allowed": allowed,
+            "reason": reason
+        }
+        
+        self.logger.info(json.dumps(event))
+    
+    def log_security_violation(
+        self,
+        violation_type: str,
+        ip_address: str,
+        details: Dict[str, Any]
+    ):
+        """Log security violations"""
+        event = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": "security_violation",
+            "violation_type": violation_type,
+            "ip_address": ip_address,
+            "details": details
+        }
+        
+        self.logger.warning(json.dumps(event))
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Best Practices</h2>
+
+<ac:structured-macro ac:name="warning">
+    <ac:parameter ac:name="title">Security Checklist</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Always use HTTPS/TLS in production</li>
+            <li>✅ Implement proper authentication for all endpoints</li>
+            <li>✅ Use rate limiting to prevent abuse</li>
+            <li>✅ Validate and sanitize all inputs</li>
+            <li>✅ Log security events for audit trails</li>
+            <li>✅ Keep dependencies updated</li>
+            <li>✅ Use security headers</li>
+            <li>✅ Implement CORS properly</li>
+            <li>✅ Regular security assessments</li>
+            <li>✅ Have an incident response plan</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="Front Door Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="FD-Scalability-Resilience"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="FD-APISIX-Langfuse"/></ac:link></li>
+</ul>
+
+</body>
+</html>

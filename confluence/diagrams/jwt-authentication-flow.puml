@@ -1,0 +1,86 @@
+@startuml JWT_Authentication_Flow
+!theme blueprint
+title JWT Service - Authentication & Authorization Flow
+
+actor User
+participant "Client App" as client
+participant "Front Door" as fd
+participant "JWT Service" as jwt
+database "User Store" as users
+database "API Keys" as apikeys
+participant "Vault" as vault
+participant "Protected Service" as service
+
+== Authentication Flow ==
+
+User -> client: Login Request
+client -> fd: POST /api/token\n{username, password}
+fd -> jwt: Forward Auth Request
+
+alt LDAP Authentication
+    jwt -> jwt: LDAP Auth
+else File-based Authentication
+    jwt -> users: Validate Credentials
+    users --> jwt: User Details
+end
+
+jwt -> vault: Get Encryption Key
+vault --> jwt: Encryption Key
+
+jwt -> jwt: Generate JWT Token
+note right
+  Claims:
+  * sub (user ID)
+  * roles[]
+  * metadata_filter{}
+  * exp (expiration)
+end note
+
+opt JWE Encryption Enabled
+    jwt -> jwt: Encrypt Token (JWE)
+end
+
+jwt --> fd: JWT Token
+fd --> client: Auth Response\n{access_token, refresh_token}
+client --> User: Login Success
+
+== API Key Authentication ==
+
+client -> fd: Request with API Key\nX-API-Key: sk-xxx
+fd -> jwt: Validate API Key
+
+jwt -> apikeys: Lookup API Key
+apikeys --> jwt: Key Configuration
+
+jwt -> jwt: Generate Dynamic Claims
+note right
+  Based on config type:
+  * tiered_model_exec
+  * function_call
+  * api_call
+end note
+
+jwt --> fd: Claims + Permissions
+fd -> service: Authorized Request
+
+== Token Validation ==
+
+client -> fd: Request with Bearer Token
+fd -> jwt: Validate Token
+
+jwt -> jwt: Decrypt JWE (if encrypted)
+jwt -> jwt: Verify Signature
+jwt -> jwt: Check Expiration
+jwt -> jwt: Validate Claims
+
+alt Token Valid
+    jwt --> fd: Valid + User Context
+    fd -> service: Forward Request
+    service --> fd: Response
+    fd --> client: Success Response
+else Token Invalid
+    jwt --> fd: Invalid Token
+    fd --> client: 401 Unauthorized
+end
+
+@enduml

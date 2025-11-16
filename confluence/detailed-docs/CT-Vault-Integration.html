@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Control Tower - HashiCorp Vault Integration</title>
+</head>
+<body>
+
+<h1>Control Tower - HashiCorp Vault Integration</h1>
+
+<ac:structured-macro ac:name="info">
+    <ac:rich-text-body>
+        <p>This guide covers the integration of HashiCorp Vault with Control Tower for secure secret management, dynamic credentials, and encryption services.</p>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Table of Contents</h2>
+<ac:structured-macro ac:name="toc">
+    <ac:parameter ac:name="maxLevel">3</ac:parameter>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Overview</h2>
+
+<h3>What is Vault Integration?</h3>
+<p>HashiCorp Vault integration provides centralized secret management for the DSP AI Platform, enabling secure storage and dynamic generation of credentials, API keys, and sensitive configuration data.</p>
+
+<h3>Key Features</h3>
+<ac:structured-macro ac:name="panel">
+    <ac:parameter ac:name="title">Vault Capabilities</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li><strong>Secret Storage:</strong> Encrypted key-value storage</li>
+            <li><strong>Dynamic Credentials:</strong> Generate temporary database/API credentials</li>
+            <li><strong>Encryption as a Service:</strong> Encrypt/decrypt data without storing it</li>
+            <li><strong>Audit Logging:</strong> Complete audit trail of secret access</li>
+            <li><strong>Access Control:</strong> Fine-grained policies and roles</li>
+            <li><strong>Secret Rotation:</strong> Automatic credential rotation</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Configuration</h2>
+
+<h3>Vault Module in Manifest</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:parameter ac:name="title">vault-module.json</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+{
+  "name": "project-vault",
+  "type": "vault",
+  "config": {
+    "instance_name": "primary-vault",
+    "vault_url": "https://vault.example.com:8200",
+    "auth_method": "token",
+    "token": "${VAULT_TOKEN}",
+    "kv_mount_point": "secret",
+    "transit_mount_point": "transit",
+    "database_mount_point": "database",
+    "pki_mount_point": "pki",
+    "namespace": "ai-platform",
+    "ssl_verify": true,
+    "timeout": 30,
+    "max_retries": 3,
+    "policies": ["ai-platform-read", "ai-platform-write"],
+    "secret_paths": {
+      "api_keys": "secret/data/api-keys",
+      "database_creds": "database/creds/ai-db",
+      "certificates": "pki/issue/ai-platform"
+    }
+  }
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Vault Client Configuration</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">vault_client.py</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+import hvac
+from typing import Dict, Any, Optional
+
+class VaultClient:
+    def __init__(self, config: Dict[str, Any]):
+        self.client = hvac.Client(
+            url=config['vault_url'],
+            token=config.get('token'),
+            namespace=config.get('namespace'),
+            verify=config.get('ssl_verify', True)
+        )
+        
+        # Authenticate based on method
+        if config['auth_method'] == 'approle':
+            self._auth_approle(
+                config['role_id'],
+                config['secret_id']
+            )
+        elif config['auth_method'] == 'kubernetes':
+            self._auth_kubernetes(
+                config['role'],
+                config['jwt']
+            )
+    
+    def get_secret(self, path: str) -> Dict[str, Any]:
+        """Retrieve secret from KV v2"""
+        response = self.client.secrets.kv.v2.read_secret_version(
+            path=path,
+            mount_point=self.config['kv_mount_point']
+        )
+        return response['data']['data']
+    
+    def get_dynamic_credentials(self, role: str) -> Dict[str, Any]:
+        """Generate dynamic database credentials"""
+        response = self.client.read(
+            f"{self.config['database_mount_point']}/creds/{role}"
+        )
+        return {
+            'username': response['data']['username'],
+            'password': response['data']['password'],
+            'lease_id': response['lease_id'],
+            'lease_duration': response['lease_duration']
+        }
+    
+    def encrypt_data(self, plaintext: str, key_name: str) -> str:
+        """Encrypt data using Transit engine"""
+        import base64
+        encoded = base64.b64encode(plaintext.encode()).decode()
+        response = self.client.secrets.transit.encrypt_data(
+            name=key_name,
+            plaintext=encoded,
+            mount_point=self.config['transit_mount_point']
+        )
+        return response['data']['ciphertext']
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Secret Management Patterns</h2>
+
+<h3>API Key Storage</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Store API Keys in Vault</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Store OpenAI API key
+vault kv put secret/api-keys/openai \
+  api_key="sk-..." \
+  organization="org-..." \
+  project="ai-platform"
+
+# Store Groq API key with metadata
+vault kv put secret/api-keys/groq \
+  api_key="gsk_..." \
+  rate_limit="100" \
+  tier="enterprise" \
+  expires="2025-12-31"
+
+# Store multiple keys at once
+vault kv put secret/api-keys/llm-providers \
+  openai="${OPENAI_KEY}" \
+  anthropic="${ANTHROPIC_KEY}" \
+  groq="${GROQ_KEY}" \
+  cohere="${COHERE_KEY}"
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<h3>Dynamic Database Credentials</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Configure Dynamic PostgreSQL Credentials</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Configure database connection
+vault write database/config/postgres-ai \
+  plugin_name=postgresql-database-plugin \
+  allowed_roles="ai-reader,ai-writer" \
+  connection_url="postgresql://{{username}}:{{password}}@localhost:5432/aidb" \
+  username="vault" \
+  password="vault-password"
+
+# Create read-only role
+vault write database/roles/ai-reader \
+  db_name=postgres-ai \
+  creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; \
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
+  default_ttl="1h" \
+  max_ttl="24h"
+
+# Generate temporary credentials
+vault read database/creds/ai-reader
+# Returns: username and password valid for 1 hour
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Integration with Control Tower</h2>
+
+<h3>Automatic Secret Resolution</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">python</ac:parameter>
+    <ac:parameter ac:name="title">Secret Resolution in Manifests</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+class ManifestProcessor:
+    def __init__(self, vault_client: VaultClient):
+        self.vault = vault_client
+    
+    def resolve_secrets(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace vault references with actual secrets"""
+        import re
+        
+        def replace_vault_ref(value: str) -> str:
+            # Pattern: vault://secret/path:key
+            pattern = r'vault://([^:]+):([^}]+)'
+            match = re.match(pattern, value)
+            
+            if match:
+                path, key = match.groups()
+                secret = self.vault.get_secret(path)
+                return secret.get(key, value)
+            return value
+        
+        def process_dict(d: Dict) -> Dict:
+            for key, value in d.items():
+                if isinstance(value, str) and value.startswith('vault://'):
+                    d[key] = replace_vault_ref(value)
+                elif isinstance(value, dict):
+                    d[key] = process_dict(value)
+            return d
+        
+        return process_dict(manifest)
+
+# Example usage in manifest
+manifest = {
+    "modules": [{
+        "name": "llm-service",
+        "config": {
+            "api_key": "vault://secret/api-keys/openai:api_key",
+            "database_url": "vault://database/creds/ai-writer:connection_string"
+        }
+    }]
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Security Best Practices</h2>
+
+<ac:structured-macro ac:name="warning">
+    <ac:parameter ac:name="title">Security Guidelines</ac:parameter>
+    <ac:rich-text-body>
+        <ul>
+            <li>✅ Use AppRole or Kubernetes auth instead of tokens in production</li>
+            <li>✅ Enable audit logging for all secret access</li>
+            <li>✅ Implement least-privilege policies</li>
+            <li>✅ Use dynamic credentials whenever possible</li>
+            <li>✅ Set appropriate TTLs for all secrets</li>
+            <li>✅ Enable secret versioning in KV v2</li>
+            <li>✅ Use Transit engine for encryption instead of storing encrypted data</li>
+            <li>✅ Regularly rotate static secrets</li>
+        </ul>
+    </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Vault Policies</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">hcl</ac:parameter>
+    <ac:parameter ac:name="title">ai-platform-policy.hcl</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Read API keys
+path "secret/data/api-keys/*" {
+  capabilities = ["read", "list"]
+}
+
+# Generate database credentials
+path "database/creds/ai-*" {
+  capabilities = ["read"]
+}
+
+# Encrypt/decrypt data
+path "transit/encrypt/ai-platform" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/ai-platform" {
+  capabilities = ["update"]
+}
+
+# Renew leases
+path "sys/leases/renew" {
+  capabilities = ["update"]
+}
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Monitoring & Audit</h2>
+
+<h3>Enable Audit Logging</h3>
+
+<ac:structured-macro ac:name="code">
+    <ac:parameter ac:name="language">bash</ac:parameter>
+    <ac:parameter ac:name="title">Configure Audit Device</ac:parameter>
+    <ac:plain-text-body><![CDATA[
+# Enable file audit device
+vault audit enable file \
+  file_path=/vault/logs/audit.log \
+  log_raw=false
+
+# Enable syslog audit device
+vault audit enable syslog \
+  tag="vault" \
+  facility="LOCAL7"
+
+# View audit devices
+vault audit list
+    ]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>Related Documentation</h2>
+
+<ul>
+    <li><ac:link><ri:page ri:content-title="Control Tower Documentation"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="CT-LangGraph-Integration"/></ac:link></li>
+    <li><ac:link><ri:page ri:content-title="CT-Policy-Management"/></ac:link></li>
+</ul>
+
+</body>
+</html>
